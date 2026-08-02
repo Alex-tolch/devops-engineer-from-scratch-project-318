@@ -1,0 +1,42 @@
+---
+- name: Create application directory
+  ansible.builtin.file:
+    path: "{{ app_deploy_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_deploy_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart bulletin stack
+
+- name: Deploy docker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_deploy_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart bulletin stack
+
+- name: Pull application image from registry
+  community.docker.docker_image:
+    name: "{{ docker_image }}"
+    source: pull
+    force_source: true
+  ignore_errors: true
+  register: image_pull
+
+- name: Start application with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_deploy_dir }}"
+    state: present
+    pull: never
+    recreate: always
+    remove_orphans: true

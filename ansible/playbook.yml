@@ -1,0 +1,12 @@
+---
+- name: Prepare server and deploy bulletin board
+  hosts: app
+  gather_facts: true
+  vars_files:
+    - group_vars/app/vars.yml
+    - group_vars/app/vault.yml
+  roles:
+    - role: docker
+      tags: [setup, docker]
+    - role: app
+      tags: [deploy, app]

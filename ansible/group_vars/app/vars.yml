@@ -1,0 +1,7 @@
+app_deploy_dir: /opt/bulletins
+docker_image: ghcr.io/alex-tolch/devops-engineer-from-scratch-project-318:latest
+db_port: 25060
+db_name: bulletins
+db_user: bulletin_app
+spaces_region: us-east-1
+spaces_endpoint: https://sfo3.digitaloceanspaces.com

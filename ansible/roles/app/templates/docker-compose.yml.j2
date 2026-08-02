@@ -1,0 +1,15 @@
+services:
+  app:
+    image: {{ docker_image }}
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - bulletin-net
+
+networks:
+  bulletin-net:
+    name: bulletin-net
