@@ -32,7 +32,7 @@ TERRAFORM_DIR := terraform
 
 .PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
-	ansible-setup ansible-prepare ansible-deploy server-prepare server-deploy
+	ansible-setup ansible-prepare ansible-deploy ansible-monitoring server-prepare server-deploy
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE) .
@@ -80,6 +80,11 @@ ansible-deploy:
 	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
 	@chmod 644 $(VAULT_PASS_FILE)
 	$(ANSIBLE_PLAYBOOK) --tags deploy
+
+ansible-monitoring:
+	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
+	@chmod 644 $(VAULT_PASS_FILE)
+	$(ANSIBLE_PLAYBOOK) --tags "deploy,monitoring"
 
 server-prepare: ansible-setup ansible-prepare
 

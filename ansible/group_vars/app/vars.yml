@@ -5,3 +5,14 @@ db_name: bulletins
 db_user: bulletin_app
 spaces_region: us-east-1
 spaces_endpoint: https://sfo3.digitaloceanspaces.com
+
+# Monitoring (see README). Restrict sources in Terraform metrics_source_addresses.
+node_exporter_port: 9100
+metrics_proxy_port: 9090
+metrics_actuator_host_port: 9091
+metrics_basic_auth_user: metrics
+metrics_basic_auth_password: "{{ vault_metrics_basic_auth_password }}"
+
+# Example: monitoring server public IP with /32 (used in Terraform tfvars documentation).
+monitoring_source_cidrs:
+  - "0.0.0.0/0"

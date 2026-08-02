@@ -1,0 +1,65 @@
+---
+- name: Install nginx and htpasswd tooling
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+    update_cache: true
+  register: metrics_proxy_apt
+  until: metrics_proxy_apt is succeeded
+  retries: 10
+  delay: 30
+
+- name: Ensure nginx log directory exists
+  ansible.builtin.file:
+    path: /var/log/nginx
+    state: directory
+    owner: root
+    group: adm
+    mode: "0755"
+
+- name: Create metrics basic auth file
+  ansible.builtin.command:
+    cmd: htpasswd -nbB {{ metrics_basic_auth_user }} {{ metrics_basic_auth_password }}
+  register: metrics_htpasswd_line
+  changed_when: false
+  no_log: true
+
+- name: Install metrics htpasswd
+  ansible.builtin.copy:
+    dest: /etc/nginx/metrics.htpasswd
+    content: "{{ metrics_htpasswd_line.stdout }}\n"
+    owner: root
+    group: www-data
+    mode: "0640"
+  notify: Restart nginx
+  no_log: true
+
+- name: Deploy metrics reverse proxy site
+  ansible.builtin.template:
+    src: metrics-proxy.conf.j2
+    dest: /etc/nginx/sites-available/metrics-proxy.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Enable metrics proxy site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/metrics-proxy.conf
+    dest: /etc/nginx/sites-enabled/metrics-proxy.conf
+    state: link
+  notify: Restart nginx
+
+- name: Disable default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart nginx
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: started

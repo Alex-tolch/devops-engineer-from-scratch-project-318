@@ -1,0 +1,59 @@
+log_format metrics_json escape=json '{'
+  '"time":"$time_iso8601",'
+  '"remote_addr":"$remote_addr",'
+  '"request_method":"$request_method",'
+  '"request_uri":"$request_uri",'
+  '"status":$status,'
+  '"body_bytes_sent":$body_bytes_sent,'
+  '"request_time":$request_time,'
+  '"upstream_addr":"$upstream_addr",'
+  '"upstream_status":"$upstream_status",'
+  '"http_user_agent":"$http_user_agent"'
+'}';
+
+upstream bulletin_actuator {
+    server {{ metrics_actuator_upstream_host }}:{{ metrics_actuator_upstream_port }};
+    keepalive 8;
+}
+
+server {
+    listen 0.0.0.0:{{ metrics_proxy_port }};
+    server_name _;
+
+    access_log {{ metrics_access_log }} metrics_json;
+    error_log {{ metrics_error_log }} warn;
+
+    auth_basic "Application metrics";
+    auth_basic_user_file /etc/nginx/metrics.htpasswd;
+
+    location /actuator/prometheus {
+        proxy_pass http://bulletin_actuator;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /actuator/health {
+        proxy_pass http://bulletin_actuator;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /actuator/health/ {
+        proxy_pass http://bulletin_actuator;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location = /metrics {
+        return 301 /actuator/prometheus;
+    }
+}

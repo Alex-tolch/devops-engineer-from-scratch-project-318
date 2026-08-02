@@ -9,4 +9,8 @@
     - role: docker
       tags: [setup, docker]
     - role: app
-      tags: [deploy, app]
+      tags: [deploy, app, setup]
+    - role: node_exporter
+      tags: [setup, monitoring, node_exporter]
+    - role: metrics_proxy
+      tags: [setup, monitoring, metrics_proxy]

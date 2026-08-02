@@ -40,3 +40,4 @@
     pull: never
     recreate: always
     remove_orphans: true
+  notify: Restart nginx metrics proxy

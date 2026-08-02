@@ -1,0 +1,7 @@
+metrics_proxy_port: 9090
+metrics_actuator_host_port: 9091
+metrics_actuator_upstream_host: 127.0.0.1
+metrics_actuator_upstream_port: "{{ metrics_actuator_host_port }}"
+metrics_basic_auth_user: metrics
+metrics_access_log: /var/log/nginx/metrics-access.json
+metrics_error_log: /var/log/nginx/metrics-error.log

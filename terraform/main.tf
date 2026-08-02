@@ -88,7 +88,13 @@ resource "digitalocean_firewall" "app" {
   inbound_rule {
     protocol         = "tcp"
     port_range       = "9090"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.metrics_source_addresses
+  }
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "9100"
+    source_addresses = var.metrics_source_addresses
   }
 
   outbound_rule {

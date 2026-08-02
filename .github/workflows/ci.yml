@@ -17,6 +17,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Ensure gradlew is executable
+        run: chmod +x gradlew
       - name: Run linter
         run: make lint
       - name: Run tests

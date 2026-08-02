@@ -45,3 +45,9 @@ variable "spaces_secret_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "metrics_source_addresses" {
+  description = "Inbound sources allowed for Node Exporter (9100) and metrics proxy (9090). Use monitoring server /32 in production."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}

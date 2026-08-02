@@ -30,8 +30,78 @@ make docker-upload-server
 
 ```bash
 curl -s "http://104.248.240.149:8080/api/bulletins?page=1&perPage=3"
-curl -s "http://104.248.240.149:9090/actuator/health"
+# Production metrics (Nginx basic auth; password in ansible vault):
+curl -s -u "metrics:<password>" "http://104.248.240.149:9090/actuator/health"
+curl -s -u "metrics:<password>" "http://104.248.240.149:9090/actuator/prometheus" | head
+# Node Exporter (firewall: monitoring sources only; from allowed IP):
+curl -s "http://104.248.240.149:9100/metrics" | head
 ```
+
+## Observability (step 2): Node Exporter and application metrics
+
+Ansible installs **Node Exporter** and an **Nginx** reverse proxy in front of Spring Actuator. The app publishes management on **`127.0.0.1:9091`** (container port 9090); Nginx listens on **`0.0.0.0:9090`** with **HTTP basic auth** and **JSON access/error logs** (`/var/log/nginx/metrics-access.json`, `metrics-error.log`). Host port 9090 cannot be shared with Docker `0.0.0.0`/`127.0.0.1:9090` bind — use 9091 for the container publish.
+
+| Component | Port | Access |
+|-----------|------|--------|
+| HTTP API | 8080 | Public (DO firewall) |
+| Actuator via Nginx | 9090 | `metrics_source_addresses` in Terraform + basic auth (`metrics` user, password in vault) |
+| Node Exporter | 9100 | `metrics_source_addresses` only (no auth; restrict by firewall) |
+
+Terraform variable `metrics_source_addresses` (default `0.0.0.0/0` for labs) controls inbound **9090** and **9100**. Set to your monitoring server `/32` in `terraform.tfvars`:
+
+```hcl
+metrics_source_addresses = ["203.0.113.50/32"]
+```
+
+Inventory and vars: [`ansible/inventory.ini.example`](ansible/inventory.ini.example), [`ansible/group_vars/app/vars.yml`](ansible/group_vars/app/vars.yml). Add `vault_metrics_basic_auth_password` in encrypted [`ansible/group_vars/app/vault.yml`](ansible/group_vars/app/vault.yml) (see `vault.yml.example`).
+
+Deploy monitoring stack:
+
+```bash
+make server-prepare          # first install
+make ansible-monitoring      # after config changes
+```
+
+### Verification (`<app-host>` = droplet IP)
+
+Local/docker (no Nginx, direct Actuator):
+
+```bash
+curl -s http://localhost:9090/actuator/health
+curl -s http://localhost:9090/actuator/prometheus | head
+```
+
+Production (via Nginx on 9090):
+
+```bash
+export APP_HOST=104.248.240.149
+export METRICS_PASS='your-vault-password'
+curl -s -u "metrics:${METRICS_PASS}" "http://${APP_HOST}:9090/actuator/health"
+curl -s -u "metrics:${METRICS_PASS}" "http://${APP_HOST}:9090/actuator/prometheus" | grep -E '^(process_uptime|http_server_requests)' | head
+curl -s "http://${APP_HOST}:9100/metrics" | grep -E '^node_load1|^node_memory_MemAvailable_bytes' | head
+```
+
+### Required Prometheus metrics (host + application)
+
+| Metric | Source | Category |
+|--------|--------|----------|
+| `node_load1` | Node Exporter | CPU load |
+| `node_cpu_seconds_total` | Node Exporter | CPU |
+| `node_memory_MemAvailable_bytes` | Node Exporter | Memory |
+| `node_memory_MemTotal_bytes` | Node Exporter | Memory |
+| `node_filesystem_avail_bytes` | Node Exporter | Disks |
+| `node_filesystem_size_bytes` | Node Exporter | Disks |
+| `node_network_receive_bytes_total` | Node Exporter | Network |
+| `node_network_transmit_bytes_total` | Node Exporter | Network |
+| `node_procs_running` | Node Exporter | Processes |
+| `node_systemd_unit_state` | Node Exporter (`--collector.systemd`) | System services |
+| `process_uptime_seconds` | Actuator `/actuator/prometheus` | JVM / app process |
+| `jvm_memory_used_bytes` | Actuator | JVM memory |
+| `http_server_requests_seconds_count` | Actuator | HTTP traffic |
+| `http_server_requests_seconds_sum` | Actuator | HTTP latency |
+| `http_server_requests_seconds_bucket` | Actuator | HTTP histogram |
+
+Collectors enabled in Ansible: `systemd`, `processes`. Application metrics use Micrometer Prometheus registry (Spring Boot Actuator).
 
 ---
 
@@ -190,10 +260,14 @@ Useful JVM options:
 
 ## Monitoring / management ports
 
-- Application traffic still uses port `8080` by default. Actuator endpoints (health, metrics, Prometheus scrape, logfile) listen on `MANAGEMENT_SERVER_PORT` (defaults to `9090` for every profile). Override it via env vars when you need a different port.
-- If your deployment does **not** include Prometheus/Grafana yet, you can ignore the management port entirely; the application starts normally even if nothing scrapes `/actuator`. Simply avoid publishing the management port in Docker/Kubernetes until you need it.
-- When monitoring is enabled, expose both ports, e.g. `docker run -p 8080:8080 -p 9090:9090 ...` and point Prometheus to `http://<host>:9090/actuator/prometheus`.
-- Health probes are available at `/actuator/health/liveness` and `/actuator/health/readiness`; Grafana/Loki integrations should use the same port/env variable.
+Production (Ansible): Actuator is on **`127.0.0.1:9091`** on the host (Docker maps container `9090`); **Nginx** exposes **`0.0.0.0:9090`** with basic auth and JSON logs. **Node Exporter** listens on `9100`. Restrict both ports in Terraform (`metrics_source_addresses`).
+
+Local development: management port is published on `9090` (`docker compose` / `make run`) without Nginx.
+
+- Application HTTP: `8080`.
+- Health: `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`.
+- Prometheus scrape: `/actuator/prometheus` (Micrometer).
+- See [Observability (step 2)](#observability-step-2-node-exporter-and-application-metrics) for curl examples and the metrics table.
 
 ## Actuator endpoints (local check)
 
