@@ -11,6 +11,7 @@ Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-comp
 | Ansible | [`ansible/`](ansible/) |
 | Terraform | [`terraform/`](terraform/) |
 | App URL | http://104.248.240.149:8080 |
+| Prometheus | http://165.245.222.145:9090 ([`/graph`](http://165.245.222.145:9090/graph), [`/targets`](http://165.245.222.145:9090/targets)) |
 
 ```bash
 make test
@@ -47,7 +48,7 @@ Ansible installs **Node Exporter** and an **Nginx** reverse proxy in front of Sp
 | Actuator via Nginx | 9090 | `metrics_source_addresses` in Terraform + basic auth (`metrics` user, password in vault) |
 | Node Exporter | 9100 | `metrics_source_addresses` only (no auth; restrict by firewall) |
 
-Terraform variable `metrics_source_addresses` (default `0.0.0.0/0` for labs) controls inbound **9090** and **9100**. Set to your monitoring server `/32` in `terraform.tfvars`:
+Terraform variable `metrics_source_addresses` (default **`null`** → only monitoring droplet `/32`) controls inbound **9090** and **9100** on the app host. Override in `terraform.tfvars` for lab-wide access:
 
 ```hcl
 metrics_source_addresses = ["203.0.113.50/32"]
@@ -102,6 +103,47 @@ curl -s "http://${APP_HOST}:9100/metrics" | grep -E '^node_load1|^node_memory_Me
 | `http_server_requests_seconds_bucket` | Actuator | HTTP histogram |
 
 Collectors enabled in Ansible: `systemd`, `processes`. Application metrics use Micrometer Prometheus registry (Spring Boot Actuator).
+
+## Observability (step 3): Prometheus server
+
+A separate **monitoring** droplet (Terraform group equivalent: inventory `[monitoring]`) runs **Prometheus** via Ansible (`roles/prometheus`). Docker network **`monitoring`** isolates the stack for future Grafana / Alertmanager.
+
+| Item | Location |
+|------|----------|
+| Monitoring VM | `terraform output monitoring_ip` |
+| Prometheus UI | `http://<monitoring_ip>:9090` — `/graph`, `/targets` |
+| Config (templated) | `ansible/roles/prometheus/templates/prometheus.yml.j2` |
+| Alert rules | `ansible/roles/prometheus/files/alerts.yml` |
+| Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml` |
+
+**Firewall:** app droplet **9090** and **9100** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22** and **9090** (`prometheus_ui_source_addresses`).
+
+### Provision and deploy
+
+```bash
+cd terraform && terraform apply
+# Update ansible/inventory.ini with droplet_ip and monitoring_ip
+make server-monitoring
+```
+
+Repeat deploy after config changes:
+
+```bash
+make server-monitoring
+```
+
+### Verification (for reviewers)
+
+1. Open **`http://<monitoring_ip>:9090/targets`** — jobs `node_exporter` and `bulletins_actuator` should be **UP**.
+2. In **`http://<monitoring_ip>:9090/graph`**, run PromQL **`up`** — all series should be **`1`**.
+3. Optional:
+
+```bash
+export MONITORING_HOST=<monitoring_ip>
+curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=up" | jq '.data.result[] | {job: .metric.job, instance: .metric.instance, value: .value[1]}'
+```
+
+Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `group_vars/monitoring/vars.yml` — no manual edit of the rendered config on the server.
 
 ---
 

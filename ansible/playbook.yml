@@ -14,3 +14,15 @@
       tags: [setup, monitoring, node_exporter]
     - role: metrics_proxy
       tags: [setup, monitoring, metrics_proxy]
+
+- name: Deploy Prometheus monitoring server
+  hosts: monitoring
+  gather_facts: true
+  vars_files:
+    - group_vars/monitoring/vars.yml
+    - group_vars/app/vault.yml
+  roles:
+    - role: docker
+      tags: [setup, docker, prometheus]
+    - role: prometheus
+      tags: [setup, prometheus, monitoring]

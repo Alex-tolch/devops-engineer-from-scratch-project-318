@@ -32,6 +32,24 @@ resource "digitalocean_droplet" "app" {
   tags = ["bulletin-app", var.project_name]
 }
 
+resource "digitalocean_droplet" "monitoring" {
+  name     = "${var.project_name}-monitoring"
+  region   = var.region
+  size     = var.droplet_size
+  image    = "ubuntu-24-04-x64"
+  vpc_uuid = digitalocean_vpc.main.id
+  ssh_keys = [var.ssh_key_fingerprint]
+
+  tags = ["bulletin-monitoring", var.project_name]
+}
+
+locals {
+  metrics_scrape_sources = coalesce(
+    var.metrics_source_addresses,
+    ["${digitalocean_droplet.monitoring.ipv4_address}/32"]
+  )
+}
+
 resource "digitalocean_database_cluster" "postgres" {
   name       = "${var.project_name}-pg"
   engine     = "pg"
@@ -88,13 +106,48 @@ resource "digitalocean_firewall" "app" {
   inbound_rule {
     protocol         = "tcp"
     port_range       = "9090"
-    source_addresses = var.metrics_source_addresses
+    source_addresses = local.metrics_scrape_sources
   }
 
   inbound_rule {
     protocol         = "tcp"
     port_range       = "9100"
-    source_addresses = var.metrics_source_addresses
+    source_addresses = local.metrics_scrape_sources
+  }
+
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  outbound_rule {
+    protocol              = "udp"
+    port_range            = "1-65535"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  outbound_rule {
+    protocol              = "icmp"
+    destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+}
+
+resource "digitalocean_firewall" "monitoring" {
+  name = "${var.project_name}-monitoring-fw"
+
+  droplet_ids = [digitalocean_droplet.monitoring.id]
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "22"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "9090"
+    source_addresses = var.prometheus_ui_source_addresses
   }
 
   outbound_rule {
@@ -118,6 +171,11 @@ resource "digitalocean_firewall" "app" {
 output "droplet_ip" {
   description = "Public IPv4 of the application server"
   value       = digitalocean_droplet.app.ipv4_address
+}
+
+output "monitoring_ip" {
+  description = "Public IPv4 of the Prometheus monitoring server"
+  value       = digitalocean_droplet.monitoring.ipv4_address
 }
 
 output "database_host" {

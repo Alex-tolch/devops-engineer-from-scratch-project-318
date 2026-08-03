@@ -1,0 +1,22 @@
+services:
+  prometheus:
+    image: {{ prometheus_image }}
+    container_name: prometheus
+    restart: unless-stopped
+    networks:
+      - {{ prometheus_docker_network }}
+    ports:
+      - "{{ prometheus_bind_address }}:{{ prometheus_port }}:9090"
+    volumes:
+      - {{ prometheus_config_dir }}:/etc/prometheus:ro
+      - {{ prometheus_data_dir }}:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.listen-address=:9090
+
+networks:
+  {{ prometheus_docker_network }}:
+    name: {{ prometheus_docker_network }}
+    external: true

@@ -47,7 +47,13 @@ variable "spaces_secret_key" {
 }
 
 variable "metrics_source_addresses" {
-  description = "Inbound sources allowed for Node Exporter (9100) and metrics proxy (9090). Use monitoring server /32 in production."
+  description = "Inbound sources for app metrics (9090, 9100). If null, only the monitoring droplet public IP /32 is allowed."
+  type        = list(string)
+  default     = null
+}
+
+variable "prometheus_ui_source_addresses" {
+  description = "Inbound sources allowed for Prometheus UI on the monitoring droplet (9090)."
   type        = list(string)
   default     = ["0.0.0.0/0", "::/0"]
 }

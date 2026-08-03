@@ -1,0 +1,29 @@
+prometheus_deploy_dir: /opt/prometheus
+prometheus_config_dir: "{{ prometheus_deploy_dir }}/config"
+prometheus_data_dir: "{{ prometheus_deploy_dir }}/data"
+prometheus_image: prom/prometheus:v2.54.1
+prometheus_port: 9090
+prometheus_bind_address: "0.0.0.0"
+prometheus_docker_network: monitoring
+prometheus_scrape_interval: 15s
+prometheus_evaluation_interval: 15s
+
+# Application host for scrape targets (public IP or VPC address reachable from monitoring).
+app_scrape_address: "{{ hostvars[groups['app'][0]]['ansible_host'] | default(groups['app'][0]) }}"
+
+metrics_basic_auth_user: metrics
+
+# Extend this list when adding nginx exporter, Loki pushgateway, etc.
+prometheus_scrape_jobs:
+  - name: node_exporter
+    metrics_path: /metrics
+    scheme: http
+    basic_auth: false
+    targets:
+      - "{{ app_scrape_address }}:{{ hostvars[groups['app'][0]]['node_exporter_port'] | default(9100) }}"
+  - name: bulletins_actuator
+    metrics_path: /actuator/prometheus
+    scheme: http
+    basic_auth: true
+    targets:
+      - "{{ app_scrape_address }}:{{ hostvars[groups['app'][0]]['metrics_proxy_port'] | default(9090) }}"

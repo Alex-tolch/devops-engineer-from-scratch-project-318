@@ -1,0 +1,85 @@
+---
+- name: Create Prometheus directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ prometheus_deploy_dir }}"
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_data_dir }}"
+
+- name: Set Prometheus TSDB directory ownership
+  ansible.builtin.file:
+    path: "{{ prometheus_data_dir }}"
+    owner: "65534"
+    group: "65534"
+    mode: "0755"
+
+- name: Ensure monitoring Docker network exists
+  community.docker.docker_network:
+    name: "{{ prometheus_docker_network }}"
+    state: present
+
+- name: Deploy alert rules
+  ansible.builtin.copy:
+    src: alerts.yml
+    dest: "{{ prometheus_config_dir }}/alerts.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Prometheus stack
+
+- name: Deploy Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Prometheus stack
+
+- name: Validate Prometheus configuration with promtool
+  ansible.builtin.command:
+    cmd: >-
+      docker run --rm --entrypoint promtool
+      -v {{ prometheus_config_dir }}:/etc/prometheus:ro
+      {{ prometheus_image }}
+      check config /etc/prometheus/prometheus.yml
+    chdir: "{{ prometheus_deploy_dir }}"
+  changed_when: false
+
+- name: Validate alert rules with promtool
+  ansible.builtin.command:
+    cmd: >-
+      docker run --rm --entrypoint promtool
+      -v {{ prometheus_config_dir }}:/etc/prometheus:ro
+      {{ prometheus_image }}
+      check rules /etc/prometheus/alerts.yml
+    chdir: "{{ prometheus_deploy_dir }}"
+  changed_when: false
+
+- name: Deploy Prometheus docker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ prometheus_deploy_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Prometheus stack
+
+- name: Pull Prometheus image
+  community.docker.docker_image:
+    name: "{{ prometheus_image }}"
+    source: pull
+    force_source: true
+
+- name: Start Prometheus with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ prometheus_deploy_dir }}"
+    state: present
+    pull: never
+    recreate: always
+    remove_orphans: true

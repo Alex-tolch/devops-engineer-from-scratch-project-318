@@ -73,3 +73,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  prometheus-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate alert rules with promtool
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "${{ github.workspace }}/ansible/roles/prometheus/files:/etc/prometheus:ro" \
+            prom/prometheus:v2.54.1 \
+            check rules /etc/prometheus/alerts.yml

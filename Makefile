@@ -28,11 +28,12 @@ DOCKER_IMAGE ?= ghcr.io/alex-tolch/devops-engineer-from-scratch-project-318:late
 ANSIBLE_DIR := ansible
 VAULT_PASS_FILE := /tmp/hexlet-ansible-vault-pass
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml
+ANSIBLE_PROMETHEUS = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml --limit monitoring
 TERRAFORM_DIR := terraform
 
 .PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
-	ansible-setup ansible-prepare ansible-deploy ansible-monitoring server-prepare server-deploy
+	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus server-prepare server-deploy server-monitoring
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE) .
@@ -86,9 +87,16 @@ ansible-monitoring:
 	@chmod 644 $(VAULT_PASS_FILE)
 	$(ANSIBLE_PLAYBOOK) --tags "deploy,monitoring"
 
+ansible-prometheus:
+	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
+	@chmod 644 $(VAULT_PASS_FILE)
+	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus"
+
 server-prepare: ansible-setup ansible-prepare
 
 server-deploy: ansible-setup ansible-deploy
+
+server-monitoring: ansible-setup ansible-prometheus
 
 ansible-vault-encrypt:
 	cd $(ANSIBLE_DIR) && ansible-vault encrypt group_vars/app/vault.yml
