@@ -13,6 +13,8 @@
     - "{{ grafana_provisioning_dir }}/datasources"
     - "{{ grafana_provisioning_dir }}/dashboards"
     - "{{ grafana_dashboards_dir }}"
+    - "{{ grafana_provisioning_dir }}/alerting"
+    - "{{ grafana_deploy_dir }}/ntfy-relay"
 
 - name: Set Grafana data directory ownership
   ansible.builtin.file:
@@ -50,6 +52,43 @@
     - system-resources.json
     - application-health.json
     - http-traffic.json
+    - status-page.json
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana alerting contact points
+  ansible.builtin.template:
+    src: provisioning/alerting/contactpoints.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/alerting/contactpoints.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana notification policies
+  ansible.builtin.template:
+    src: provisioning/alerting/policies.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/alerting/policies.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana alert rules
+  ansible.builtin.template:
+    src: provisioning/alerting/rules.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/alerting/rules.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Deploy ntfy relay for Grafana webhooks
+  ansible.builtin.copy:
+    src: ntfy-relay/app.py
+    dest: "{{ grafana_deploy_dir }}/ntfy-relay/app.py"
+    owner: root
+    group: root
+    mode: "0755"
   notify: Restart Grafana stack
 
 - name: Deploy Grafana docker compose file
@@ -60,6 +99,12 @@
     group: root
     mode: "0644"
   notify: Restart Grafana stack
+
+- name: Pull ntfy relay base image
+  community.docker.docker_image:
+    name: python:3.12-alpine
+    source: pull
+    force_source: true
 
 - name: Pull Grafana image
   community.docker.docker_image:

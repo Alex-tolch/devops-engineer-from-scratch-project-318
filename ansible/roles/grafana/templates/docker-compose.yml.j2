@@ -12,10 +12,28 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: "{{ vault_grafana_admin_password }}"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_HTTP_PORT: "3000"
+      GF_SERVER_ROOT_URL: "{{ grafana_root_url }}"
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
     volumes:
       - {{ grafana_data_dir }}:/var/lib/grafana
       - {{ grafana_provisioning_dir }}:/etc/grafana/provisioning:ro
+    depends_on:
+      - ntfy-relay
+
+  ntfy-relay:
+    image: python:3.12-alpine
+    container_name: grafana-ntfy-relay
+    restart: unless-stopped
+    networks:
+      - {{ grafana_docker_network }}
+    working_dir: /app
+    command: ["python", "/app/app.py"]
+    environment:
+      NTFY_URL: "{{ grafana_ntfy_url }}"
+      NTFY_TOPIC: "{{ vault_grafana_ntfy_topic }}"
+      PORT: "8088"
+    volumes:
+      - {{ grafana_deploy_dir }}/ntfy-relay:/app:ro
 
 networks:
   {{ grafana_docker_network }}:

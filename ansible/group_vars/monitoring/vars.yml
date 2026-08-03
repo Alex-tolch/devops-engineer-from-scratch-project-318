@@ -18,6 +18,15 @@ grafana_port: 3000
 grafana_bind_address: "0.0.0.0"
 grafana_admin_user: admin
 
+# Grafana alerting (see README step 5)
+grafana_alert_contact_point: ntfy-bulletins
+grafana_alert_for_short: 2m
+grafana_alert_for_missing: 5m
+grafana_alert_disk_used_ratio: 0.85
+grafana_alert_load_threshold: 4
+grafana_alert_5xx_rate_threshold: 0.05
+grafana_ntfy_url: https://ntfy.sh
+
 prometheus_scrape_jobs:
   - name: node_exporter
     metrics_path: /metrics

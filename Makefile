@@ -33,7 +33,7 @@ TERRAFORM_DIR := terraform
 
 .PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
-	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana server-prepare server-deploy server-monitoring server-grafana
+	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana server-prepare server-deploy server-monitoring server-grafana grafana-test-alert
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE) .
@@ -107,6 +107,17 @@ server-monitoring: ansible-setup
 	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus,grafana"
 
 server-grafana: ansible-setup ansible-grafana
+
+# Provisioned test rule: no Resume toggle in UI — briefly enable via Ansible, then pause again.
+grafana-test-alert:
+	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
+	@chmod 644 $(VAULT_PASS_FILE)
+	@echo "Enabling test alert (bull-test-alert) for 2 minutes..."
+	cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml --limit monitoring --tags grafana -e grafana_test_alert_paused=false
+	@sleep 120
+	@echo "Pausing test alert again..."
+	cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml --limit monitoring --tags grafana -e grafana_test_alert_paused=true
+	@echo "Done. Check ntfy topic from vault_grafana_ntfy_topic."
 
 ansible-vault-encrypt:
 	cd $(ANSIBLE_DIR) && ansible-vault encrypt group_vars/app/vault.yml

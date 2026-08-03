@@ -1,0 +1,338 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: bulletins-availability
+    folder: Bulletins
+    interval: 1m
+    rules:
+      - uid: bull-app-down
+        title: Application scrape target down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: min(up{job="bulletins_actuator"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-status
+        panelId: 1
+        noDataState: Alerting
+        execErrState: Alerting
+        for: {{ grafana_alert_for_missing }}
+        annotations:
+          summary: Bulletin application metrics unavailable
+          description: Actuator target is down or Prometheus stopped receiving metrics for longer than {{ grafana_alert_for_missing }}.
+        labels:
+          severity: critical
+          service: bulletins
+        isPaused: false
+
+      - uid: bull-node-down
+        title: Node exporter target down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: min(up{job="node_exporter"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-status
+        panelId: 2
+        noDataState: Alerting
+        execErrState: Alerting
+        for: {{ grafana_alert_for_missing }}
+        annotations:
+          summary: Node exporter is down or missing
+          description: Host metrics are unavailable for longer than {{ grafana_alert_for_missing }}.
+        labels:
+          severity: critical
+          service: bulletins
+        isPaused: false
+
+  - orgId: 1
+    name: bulletins-resources
+    folder: Bulletins
+    interval: 1m
+    rules:
+      - uid: bull-high-load
+        title: High CPU load
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: max(node_load1{job="node_exporter"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ grafana_alert_load_threshold }}]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-status
+        panelId: 3
+        noDataState: NoData
+        execErrState: Alerting
+        for: {{ grafana_alert_for_short }}
+        annotations:
+          summary: High CPU load on application host
+          description: node_load1 exceeded {{ grafana_alert_load_threshold }} for {{ grafana_alert_for_short }}.
+        labels:
+          severity: warning
+          service: bulletins
+        isPaused: false
+
+      - uid: bull-disk-full
+        title: Root disk almost full
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: max(1 - node_filesystem_avail_bytes{job="node_exporter",fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{job="node_exporter",fstype!~"tmpfs|overlay",mountpoint="/"})
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ grafana_alert_disk_used_ratio }}]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-status
+        panelId: 4
+        noDataState: NoData
+        execErrState: Alerting
+        for: {{ grafana_alert_for_short }}
+        annotations:
+          summary: Root filesystem is almost full
+          description: Disk used ratio exceeded {{ grafana_alert_disk_used_ratio | float * 100 }}% for {{ grafana_alert_for_short }}.
+        labels:
+          severity: warning
+          service: bulletins
+        isPaused: false
+
+  - orgId: 1
+    name: bulletins-http
+    folder: Bulletins
+    interval: 1m
+    rules:
+      - uid: bull-high-5xx
+        title: Elevated HTTP 5xx rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: sum(rate(http_server_requests_seconds_count{job="bulletins_actuator",status=~"5.."}[5m]))
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ grafana_alert_5xx_rate_threshold }}]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-status
+        panelId: 5
+        noDataState: NoData
+        execErrState: Alerting
+        for: {{ grafana_alert_for_short }}
+        annotations:
+          summary: HTTP 5xx responses are elevated
+          description: 5xx request rate exceeded {{ grafana_alert_5xx_rate_threshold }} req/s for {{ grafana_alert_for_short }}.
+        labels:
+          severity: warning
+          service: bulletins
+        isPaused: false
+
+      - uid: bull-test-alert
+        title: Grafana alerting test (manual)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: vector(1)
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: Test alert for notification channel verification
+          description: Enable this rule temporarily to verify ntfy/Telegram delivery (default paused).
+        labels:
+          severity: info
+          service: bulletins
+        isPaused: {{ grafana_test_alert_paused | bool }}

@@ -13,6 +13,7 @@ Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-comp
 | App URL | http://104.248.240.149:8080 |
 | Prometheus | http://165.245.222.145:9090 ([`/graph`](http://165.245.222.145:9090/graph), [`/targets`](http://165.245.222.145:9090/targets)) |
 | Grafana | http://165.245.222.145:3000 (login `admin`, password in vault: `vault_grafana_admin_password`) |
+| Alerting test | `make grafana-test-alert` (unpauses provisioned test rule ~2 min, then pauses again) |
 
 ```bash
 make test
@@ -21,6 +22,7 @@ make compose-up
 DO_TOKEN=... bash scripts/do-provision.sh   # optional
 cp ansible/inventory.ini.example ansible/inventory.ini
 make server-prepare && make server-deploy
+make server-monitoring   # Prometheus + Grafana (after inventory has monitoring_ip)
 ```
 
 **Updating the app on the droplet:** `make server-deploy` alone does not replace the image if GHCR pull is denied (private package). Build locally and load over SSH, then recreate the container:
@@ -156,7 +158,7 @@ Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `gro
 | Login | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`) |
 | Datasources (provisioned) | `ansible/roles/grafana/templates/provisioning/datasources/datasources.yml.j2` — **Prometheus** + **Loki** (for later log panels) |
 | Dashboards (provisioned) | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins** |
-| Screenshots | [`assets/grafana/`](assets/grafana/) |
+| UI captures | [`assets/grafana/`](assets/grafana/) (dashboard + ntfy examples) |
 
 Volumes on the host: `/opt/grafana/data`, `/opt/grafana/provisioning` (datasources + dashboard JSON).
 
@@ -167,13 +169,6 @@ make server-grafana          # Grafana only (after Docker exists on monitoring h
 make server-monitoring       # Prometheus + Grafana
 ```
 
-Regenerate preview images in `assets/grafana/` from Prometheus:
-
-```bash
-python3 -m pip install matplotlib
-python3 scripts/generate_grafana_asset_previews.py
-```
-
 ### Dashboards
 
 | Dashboard | Variables | Focus |
@@ -181,16 +176,73 @@ python3 scripts/generate_grafana_asset_previews.py
 | System resources | `$job`, `$instance` | CPU load, memory, disk, network (Node Exporter) |
 | Application health | `$job`, `$instance` | `up`, JVM memory, threads (Actuator) |
 | HTTP traffic | `$job`, `$instance` | Rates and latency by HTTP status |
+| Status Page | — | Service health; panels linked to alert rules |
 
-Datasource **Loki** (`http://loki:3100`) is pre-provisioned; add log panels when Loki is deployed.
+Datasource **Loki** (`http://loki:3100`) is pre-provisioned with alert management disabled until Loki is deployed.
 
-Preview images (from live Prometheus series):
+Example dashboard captures:
 
 ![System resources](assets/grafana/system-resources.png)
 
 ![Application health](assets/grafana/application-health.png)
 
 ![HTTP traffic](assets/grafana/http-traffic.png)
+
+## Observability (step 5): Grafana alerting
+
+Unified alerting is **provisioned from the repository** (same `make server-grafana` as dashboards). Notifications use **ntfy** (free, available in RF): Grafana sends a webhook to a small **`ntfy-relay`** container on the monitoring host, which posts **plain text** to `https://ntfy.sh/<topic>` (not raw JSON).
+
+| Item | Location |
+|------|----------|
+| Alert rules (YAML) | `ansible/roles/grafana/templates/provisioning/alerting/rules.yml.j2` |
+| Contact point | `ansible/roles/grafana/templates/provisioning/alerting/contactpoints.yml.j2` |
+| Notification policy | `ansible/roles/grafana/templates/provisioning/alerting/policies.yml.j2` |
+| Status dashboard | `ansible/roles/grafana/files/dashboards/status-page.json` (`bulletins-status`) |
+| ntfy topic (secret) | `vault_grafana_ntfy_topic` in `ansible/group_vars/app/vault.yml` |
+| ntfy relay | `ansible/roles/grafana/files/ntfy-relay/app.py` (webhook → plain text) |
+
+Control test rule pause via Ansible var `grafana_test_alert_paused` (default `true` in `roles/grafana/defaults/main.yml`).
+
+### Critical scenarios
+
+| Alert | `for` | Labels | Linked panel (Status Page) |
+|-------|-------|--------|----------------------------|
+| Application scrape down | 5m | `severity=critical`, `service=bulletins` | Actuator stat |
+| Node exporter down | 5m | `severity=critical`, `service=bulletins` | Node stat |
+| High CPU load | 2m | `severity=warning` | CPU load |
+| Root disk almost full | 2m | `severity=warning` | Disk % |
+| Elevated HTTP 5xx | 2m | `severity=warning` | 5xx rate |
+| Manual test rule (`bull-test-alert`) | 0s | `severity=info` | — (paused by default) |
+
+Thresholds: `ansible/group_vars/monitoring/vars.yml` (`grafana_alert_*`).
+
+### Where to look (reviewer)
+
+1. **Alert rules:** http://165.245.222.145:3000/alerting/list  
+2. **Contact points:** http://165.245.222.145:3000/alerting/notifications  
+3. **Status Page:** http://165.245.222.145:3000/d/bulletins-status/status-page  
+
+### Deploy / sync rules
+
+```bash
+make server-grafana
+```
+
+### Test notifications
+
+1. Subscribe to the ntfy topic: `https://ntfy.sh/<vault_grafana_ntfy_topic>` (in encrypted vault).
+2. Optional channel check (direct ntfy, no Grafana): `curl -d "test" "https://ntfy.sh/<topic>"`
+3. End-to-end (Grafana → `ntfy-relay` → ntfy): provisioned rule `bull-test-alert` stays paused (`grafana_test_alert_paused=true`); resume via Ansible, not the UI toggle on provisioned rules:
+
+```bash
+make grafana-test-alert
+```
+
+Expect a **plain-text** ntfy message. Optional helper (lists contact points + direct ntfy only): `GRAFANA_PASS='…' python3 scripts/ntfy_smoke_test.py`
+
+In **Alerting → list**, **Grafana-managed** groups under **Bulletins** are in scope for this step. **Data source-managed** rules from Prometheus `alerts.yml` may show **No Data** — that is separate from Grafana alerting.
+
+![ntfy notification example](assets/grafana/alert-ntfy.png)
 
 ---
 

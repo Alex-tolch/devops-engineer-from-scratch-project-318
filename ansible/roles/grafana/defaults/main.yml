@@ -9,3 +9,13 @@ grafana_docker_network: monitoring
 grafana_admin_user: admin
 prometheus_datasource_url: http://prometheus:9090
 loki_datasource_url: http://loki:3100
+
+grafana_alert_contact_point: ntfy-bulletins
+grafana_alert_for_short: 2m
+grafana_alert_for_missing: 5m
+grafana_alert_disk_used_ratio: 0.85
+grafana_alert_load_threshold: 4
+grafana_alert_5xx_rate_threshold: 0.05
+grafana_ntfy_url: https://ntfy.sh
+grafana_root_url: "http://{{ ansible_host }}:{{ grafana_port }}/"
+grafana_test_alert_paused: true

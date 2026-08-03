@@ -42,7 +42,7 @@ terraform.tfstate
 terraform.tfstate.*
 terraform/tfplan
 terraform/*.tfplan
-*.tfplan
+**.tfplan**
 terraform/.terraform.lock.hcl
 terraform/terraform.tfvars
 ansible/inventory.ini
