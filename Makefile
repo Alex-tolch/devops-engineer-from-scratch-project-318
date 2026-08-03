@@ -33,7 +33,7 @@ TERRAFORM_DIR := terraform
 
 .PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
-	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus server-prepare server-deploy server-monitoring
+	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana server-prepare server-deploy server-monitoring server-grafana
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE) .
@@ -92,11 +92,21 @@ ansible-prometheus:
 	@chmod 644 $(VAULT_PASS_FILE)
 	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus"
 
+ansible-grafana:
+	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
+	@chmod 644 $(VAULT_PASS_FILE)
+	$(ANSIBLE_PROMETHEUS) --tags "grafana"
+
 server-prepare: ansible-setup ansible-prepare
 
 server-deploy: ansible-setup ansible-deploy
 
-server-monitoring: ansible-setup ansible-prometheus
+server-monitoring: ansible-setup
+	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
+	@chmod 644 $(VAULT_PASS_FILE)
+	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus,grafana"
+
+server-grafana: ansible-setup ansible-grafana
 
 ansible-vault-encrypt:
 	cd $(ANSIBLE_DIR) && ansible-vault encrypt group_vars/app/vault.yml

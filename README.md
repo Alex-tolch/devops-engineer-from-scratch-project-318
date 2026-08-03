@@ -12,6 +12,7 @@ Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-comp
 | Terraform | [`terraform/`](terraform/) |
 | App URL | http://104.248.240.149:8080 |
 | Prometheus | http://165.245.222.145:9090 ([`/graph`](http://165.245.222.145:9090/graph), [`/targets`](http://165.245.222.145:9090/targets)) |
+| Grafana | http://165.245.222.145:3000 (login `admin`, password in vault: `vault_grafana_admin_password`) |
 
 ```bash
 make test
@@ -116,7 +117,7 @@ A separate **monitoring** droplet (Terraform group equivalent: inventory `[monit
 | Alert rules | `ansible/roles/prometheus/files/alerts.yml` |
 | Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml` |
 
-**Firewall:** app droplet **9090** and **9100** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22** and **9090** (`prometheus_ui_source_addresses`).
+**Firewall:** app droplet **9090** and **9100** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22**, **9090** (`prometheus_ui_source_addresses`), and **3000** (`grafana_ui_source_addresses`).
 
 ### Provision and deploy
 
@@ -144,6 +145,52 @@ curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=up" | jq '.data.resul
 ```
 
 Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `group_vars/monitoring/vars.yml` — no manual edit of the rendered config on the server.
+
+## Observability (step 4): Grafana
+
+**Grafana** runs on the same monitoring droplet as Prometheus (`roles/grafana`), Docker network **`monitoring`**, port **3000**.
+
+| Item | Location |
+|------|----------|
+| Grafana UI | http://165.245.222.145:3000 |
+| Login | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`) |
+| Datasources (provisioned) | `ansible/roles/grafana/templates/provisioning/datasources/datasources.yml.j2` — **Prometheus** + **Loki** (for later log panels) |
+| Dashboards (provisioned) | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins** |
+| Screenshots | [`assets/grafana/`](assets/grafana/) |
+
+Volumes on the host: `/opt/grafana/data`, `/opt/grafana/provisioning` (datasources + dashboard JSON).
+
+### Deploy / update dashboards
+
+```bash
+make server-grafana          # Grafana only (after Docker exists on monitoring host)
+make server-monitoring       # Prometheus + Grafana
+```
+
+Regenerate preview images in `assets/grafana/` from Prometheus:
+
+```bash
+python3 -m pip install matplotlib
+python3 scripts/generate_grafana_asset_previews.py
+```
+
+### Dashboards
+
+| Dashboard | Variables | Focus |
+|-----------|-----------|--------|
+| System resources | `$job`, `$instance` | CPU load, memory, disk, network (Node Exporter) |
+| Application health | `$job`, `$instance` | `up`, JVM memory, threads (Actuator) |
+| HTTP traffic | `$job`, `$instance` | Rates and latency by HTTP status |
+
+Datasource **Loki** (`http://loki:3100`) is pre-provisioned; add log panels when Loki is deployed.
+
+Preview images (from live Prometheus series):
+
+![System resources](assets/grafana/system-resources.png)
+
+![Application health](assets/grafana/application-health.png)
+
+![HTTP traffic](assets/grafana/http-traffic.png)
 
 ---
 

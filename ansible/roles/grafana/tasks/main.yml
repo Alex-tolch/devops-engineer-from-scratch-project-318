@@ -1,0 +1,76 @@
+---
+- name: Create Grafana directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ grafana_deploy_dir }}"
+    - "{{ grafana_data_dir }}"
+    - "{{ grafana_provisioning_dir }}"
+    - "{{ grafana_provisioning_dir }}/datasources"
+    - "{{ grafana_provisioning_dir }}/dashboards"
+    - "{{ grafana_dashboards_dir }}"
+
+- name: Set Grafana data directory ownership
+  ansible.builtin.file:
+    path: "{{ grafana_data_dir }}"
+    owner: "472"
+    group: "472"
+    mode: "0755"
+
+- name: Deploy Grafana datasources provisioning
+  ansible.builtin.template:
+    src: provisioning/datasources/datasources.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/datasources/datasources.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana dashboards provider
+  ansible.builtin.copy:
+    src: provisioning/dashboards/dashboards.yml
+    dest: "{{ grafana_provisioning_dir }}/dashboards/dashboards.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana dashboard JSON files
+  ansible.builtin.copy:
+    src: "dashboards/{{ item }}"
+    dest: "{{ grafana_dashboards_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - system-resources.json
+    - application-health.json
+    - http-traffic.json
+  notify: Restart Grafana stack
+
+- name: Deploy Grafana docker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ grafana_deploy_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Grafana stack
+
+- name: Pull Grafana image
+  community.docker.docker_image:
+    name: "{{ grafana_image }}"
+    source: pull
+    force_source: true
+
+- name: Start Grafana with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ grafana_deploy_dir }}"
+    state: present
+    pull: never
+    recreate: always
+    remove_orphans: true

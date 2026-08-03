@@ -1,0 +1,19 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: {{ prometheus_datasource_url }}
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: {{ loki_datasource_url }}
+    editable: false
+    jsonData:
+      maxLines: 1000

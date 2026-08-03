@@ -14,6 +14,10 @@ app_scrape_address: "{{ hostvars[groups['app'][0]]['ansible_host'] | default(gro
 metrics_basic_auth_user: metrics
 
 # Extend this list when adding nginx exporter, Loki pushgateway, etc.
+grafana_port: 3000
+grafana_bind_address: "0.0.0.0"
+grafana_admin_user: admin
+
 prometheus_scrape_jobs:
   - name: node_exporter
     metrics_path: /metrics

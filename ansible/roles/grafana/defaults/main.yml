@@ -1,0 +1,11 @@
+grafana_deploy_dir: /opt/grafana
+grafana_data_dir: "{{ grafana_deploy_dir }}/data"
+grafana_provisioning_dir: "{{ grafana_deploy_dir }}/provisioning"
+grafana_dashboards_dir: "{{ grafana_provisioning_dir }}/dashboards/json"
+grafana_image: grafana/grafana:11.4.0
+grafana_port: 3000
+grafana_bind_address: "0.0.0.0"
+grafana_docker_network: monitoring
+grafana_admin_user: admin
+prometheus_datasource_url: http://prometheus:9090
+loki_datasource_url: http://loki:3100

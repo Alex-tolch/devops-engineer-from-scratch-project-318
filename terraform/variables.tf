@@ -57,3 +57,9 @@ variable "prometheus_ui_source_addresses" {
   type        = list(string)
   default     = ["0.0.0.0/0", "::/0"]
 }
+
+variable "grafana_ui_source_addresses" {
+  description = "Inbound sources allowed for Grafana UI on the monitoring droplet (3000)."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+}

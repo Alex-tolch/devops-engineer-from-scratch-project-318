@@ -150,6 +150,12 @@ resource "digitalocean_firewall" "monitoring" {
     source_addresses = var.prometheus_ui_source_addresses
   }
 
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "3000"
+    source_addresses = var.grafana_ui_source_addresses
+  }
+
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
