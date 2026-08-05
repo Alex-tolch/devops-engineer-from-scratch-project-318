@@ -115,6 +115,12 @@ resource "digitalocean_firewall" "app" {
     source_addresses = local.metrics_scrape_sources
   }
 
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "9113"
+    source_addresses = local.metrics_scrape_sources
+  }
+
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"

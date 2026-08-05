@@ -6,14 +6,14 @@
 
 Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) with Docker, CI, Terraform (DigitalOcean), Ansible.
 
-| Item | Location |
-|------|----------|
-| Ansible | [`ansible/`](ansible/) |
-| Terraform | [`terraform/`](terraform/) |
-| App URL | http://104.248.240.149:8080 |
-| Prometheus | http://165.245.222.145:9090 ([`/graph`](http://165.245.222.145:9090/graph), [`/targets`](http://165.245.222.145:9090/targets)) |
-| Grafana | http://165.245.222.145:3000 (login `admin`, password in vault: `vault_grafana_admin_password`) |
-| Alerting test | `make grafana-test-alert` (unpauses provisioned test rule ~2 min, then pauses again) |
+| Item          | Location                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Ansible       | [`ansible/`](ansible/)                                                                                                      |
+| Terraform     | [`terraform/`](terraform/)                                                                                                  |
+| App URL       | http://64.226.67.71:8080                                                                                                    |
+| Prometheus    | http://165.232.72.139:9090 ([`/graph`](http://165.232.72.139:9090/graph), [`/targets`](http://165.232.72.139:9090/targets)) |
+| Grafana       | http://165.232.72.139:3000 (login `admin`, password in vault: `vault_grafana_admin_password`)                               |
+| Alerting test | `make grafana-test-alert` (unpauses provisioned test rule ~2 min, then pauses again)                                        |
 
 ```bash
 make test
@@ -33,25 +33,27 @@ make docker-upload-server
 ```
 
 ```bash
-curl -s "http://104.248.240.149:8080/api/bulletins?page=1&perPage=3"
+curl -s "http://64.226.67.71:8080/api/bulletins?page=1&perPage=3"
 # Production metrics (Nginx basic auth; password in ansible vault):
-curl -s -u "metrics:<password>" "http://104.248.240.149:9090/actuator/health"
-curl -s -u "metrics:<password>" "http://104.248.240.149:9090/actuator/prometheus" | head
+curl -s -u "metrics:<password>" "http://64.226.67.71:9090/actuator/health"
+curl -s -u "metrics:<password>" "http://64.226.67.71:9090/actuator/prometheus" | head
 # Node Exporter (firewall: monitoring sources only; from allowed IP):
-curl -s "http://104.248.240.149:9100/metrics" | head
+curl -s "http://64.226.67.71:9100/metrics" | head
 ```
 
 ## Observability (step 2): Node Exporter and application metrics
 
 Ansible installs **Node Exporter** and an **Nginx** reverse proxy in front of Spring Actuator. The app publishes management on **`127.0.0.1:9091`** (container port 9090); Nginx listens on **`0.0.0.0:9090`** with **HTTP basic auth** and **JSON access/error logs** (`/var/log/nginx/metrics-access.json`, `metrics-error.log`). Host port 9090 cannot be shared with Docker `0.0.0.0`/`127.0.0.1:9090` bind — use 9091 for the container publish.
 
-| Component | Port | Access |
-|-----------|------|--------|
-| HTTP API | 8080 | Public (DO firewall) |
-| Actuator via Nginx | 9090 | `metrics_source_addresses` in Terraform + basic auth (`metrics` user, password in vault) |
-| Node Exporter | 9100 | `metrics_source_addresses` only (no auth; restrict by firewall) |
+| Component                 | Port                     | Access                                                                                                                   |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| HTTP API                  | 8080                     | Public (DO firewall)                                                                                                     |
+| Actuator via Nginx        | 9090                     | `metrics_source_addresses` in Terraform + basic auth (`metrics` user, password in vault)                                 |
+| Node Exporter             | 9100                     | `metrics_source_addresses` only (no auth; restrict by firewall)                                                          |
+| Nginx stub_status         | 9090 path `/stub_status` | Same firewall as 9090 + IP allowlist in Nginx (`127.0.0.1`, monitoring `/32`); server uses `satisfy any` with basic auth |
+| Nginx Prometheus Exporter | 9113                     | `metrics_source_addresses` only (scrapes stub_status locally)                                                            |
 
-Terraform variable `metrics_source_addresses` (default **`null`** → only monitoring droplet `/32`) controls inbound **9090** and **9100** on the app host. Override in `terraform.tfvars` for lab-wide access:
+Terraform variable `metrics_source_addresses` (default **`null`** → only monitoring droplet `/32`) controls inbound **9090**, **9100**, and **9113** on the app host. Override in `terraform.tfvars` for lab-wide access:
 
 ```hcl
 metrics_source_addresses = ["203.0.113.50/32"]
@@ -78,7 +80,7 @@ curl -s http://localhost:9090/actuator/prometheus | head
 Production (via Nginx on 9090):
 
 ```bash
-export APP_HOST=104.248.240.149
+export APP_HOST=64.226.67.71
 export METRICS_PASS='your-vault-password'
 curl -s -u "metrics:${METRICS_PASS}" "http://${APP_HOST}:9090/actuator/health"
 curl -s -u "metrics:${METRICS_PASS}" "http://${APP_HOST}:9090/actuator/prometheus" | grep -E '^(process_uptime|http_server_requests)' | head
@@ -87,39 +89,87 @@ curl -s "http://${APP_HOST}:9100/metrics" | grep -E '^node_load1|^node_memory_Me
 
 ### Required Prometheus metrics (host + application)
 
-| Metric | Source | Category |
-|--------|--------|----------|
-| `node_load1` | Node Exporter | CPU load |
-| `node_cpu_seconds_total` | Node Exporter | CPU |
-| `node_memory_MemAvailable_bytes` | Node Exporter | Memory |
-| `node_memory_MemTotal_bytes` | Node Exporter | Memory |
-| `node_filesystem_avail_bytes` | Node Exporter | Disks |
-| `node_filesystem_size_bytes` | Node Exporter | Disks |
-| `node_network_receive_bytes_total` | Node Exporter | Network |
-| `node_network_transmit_bytes_total` | Node Exporter | Network |
-| `node_procs_running` | Node Exporter | Processes |
-| `node_systemd_unit_state` | Node Exporter (`--collector.systemd`) | System services |
-| `process_uptime_seconds` | Actuator `/actuator/prometheus` | JVM / app process |
-| `jvm_memory_used_bytes` | Actuator | JVM memory |
-| `http_server_requests_seconds_count` | Actuator | HTTP traffic |
-| `http_server_requests_seconds_sum` | Actuator | HTTP latency |
-| `http_server_requests_seconds_bucket` | Actuator | HTTP histogram |
+| Metric                                | Source                                | Category          |
+| ------------------------------------- | ------------------------------------- | ----------------- |
+| `node_load1`                          | Node Exporter                         | CPU load          |
+| `node_cpu_seconds_total`              | Node Exporter                         | CPU               |
+| `node_memory_MemAvailable_bytes`      | Node Exporter                         | Memory            |
+| `node_memory_MemTotal_bytes`          | Node Exporter                         | Memory            |
+| `node_filesystem_avail_bytes`         | Node Exporter                         | Disks             |
+| `node_filesystem_size_bytes`          | Node Exporter                         | Disks             |
+| `node_network_receive_bytes_total`    | Node Exporter                         | Network           |
+| `node_network_transmit_bytes_total`   | Node Exporter                         | Network           |
+| `node_procs_running`                  | Node Exporter                         | Processes         |
+| `node_systemd_unit_state`             | Node Exporter (`--collector.systemd`) | System services   |
+| `process_uptime_seconds`              | Actuator `/actuator/prometheus`       | JVM / app process |
+| `jvm_memory_used_bytes`               | Actuator                              | JVM memory        |
+| `http_server_requests_seconds_count`  | Actuator                              | HTTP traffic      |
+| `http_server_requests_seconds_sum`    | Actuator                              | HTTP latency      |
+| `http_server_requests_seconds_bucket` | Actuator                              | HTTP histogram    |
 
 Collectors enabled in Ansible: `systemd`, `processes`. Application metrics use Micrometer Prometheus registry (Spring Boot Actuator).
+
+## Observability (step 6): Nginx Prometheus Exporter
+
+The **metrics reverse proxy** Nginx (`roles/metrics_proxy`) exposes **`stub_status`** at **`/stub_status`** on port **9090** (same listener as Actuator). Access is limited by **Nginx `allow`** (`127.0.0.1` for the local exporter, monitoring droplet `/32`) and **HTTP basic auth** (`satisfy any`). **nginx-prometheus-exporter** (`roles/nginx_prometheus_exporter`, systemd) scrapes `http://127.0.0.1:9090/stub_status` and publishes Prometheus metrics on **9113**.
+
+| Item                                         | Location                                                                                                                                              |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nginx site + stub_status                     | `ansible/roles/metrics_proxy/templates/metrics-proxy.conf.j2`                                                                                         |
+| Exporter role                                | `ansible/roles/nginx_prometheus_exporter/`                                                                                                            |
+| Prometheus job `nginx`                       | `ansible/group_vars/monitoring/vars.yml` → `prometheus_scrape_jobs`                                                                                   |
+| Dashboard (RPS, codes, latency, connections) | [`http-traffic.json`](ansible/roles/grafana/files/dashboards/http-traffic.json) — [Grafana](http://165.232.72.139:3000/d/bulletins-http/http-traffic) |
+| Grafana alert (5xx)                          | [Alert rules](http://165.232.72.139:3000/alerting/list) — _Elevated HTTP 5xx_ (`rules.yml.j2`)                                                        |
+
+Versions: `nginx_exporter_version` in `roles/nginx_prometheus_exporter/defaults/main.yml` (exporter **1.4.2**), system **nginx** from Ubuntu packages.
+
+### Deploy
+
+```bash
+make server-prepare          # app: stub_status + nginx-prometheus-exporter (tags setup)
+make server-monitoring       # Prometheus scrape job + Grafana dashboard
+```
+
+After adding port **9113** in Terraform, apply firewall changes once:
+
+```bash
+cd terraform && terraform apply
+```
+
+### Verification
+
+From a host allowed by the app firewall (monitoring droplet or your lab IP in `metrics_source_addresses`):
+
+```bash
+export APP_HOST=64.226.67.71
+export METRICS_PASS='your-vault-password'
+curl -s -u "metrics:${METRICS_PASS}" "http://${APP_HOST}:9090/stub_status"
+curl -s "http://${APP_HOST}:9113/metrics" | grep -E '^nginx_(connections_active|http_requests_total)'
+```
+
+On Prometheus (**`job="nginx"`** UP):
+
+```bash
+export MONITORING_HOST=165.232.72.139
+curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=nginx_connections_active" | jq '.data.result'
+curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=rate(nginx_http_requests_total[5m])" | jq '.data.result'
+```
+
+`promtool check config` runs automatically in the Prometheus Ansible role after each deploy.
 
 ## Observability (step 3): Prometheus server
 
 A separate **monitoring** droplet (Terraform group equivalent: inventory `[monitoring]`) runs **Prometheus** via Ansible (`roles/prometheus`). Docker network **`monitoring`** isolates the stack for future Grafana / Alertmanager.
 
-| Item | Location |
-|------|----------|
-| Monitoring VM | `terraform output monitoring_ip` |
-| Prometheus UI | `http://<monitoring_ip>:9090` — `/graph`, `/targets` |
-| Config (templated) | `ansible/roles/prometheus/templates/prometheus.yml.j2` |
-| Alert rules | `ansible/roles/prometheus/files/alerts.yml` |
-| Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml` |
+| Item                  | Location                                               |
+| --------------------- | ------------------------------------------------------ |
+| Monitoring VM         | `terraform output monitoring_ip`                       |
+| Prometheus UI         | `http://<monitoring_ip>:9090` — `/graph`, `/targets`   |
+| Config (templated)    | `ansible/roles/prometheus/templates/prometheus.yml.j2` |
+| Alert rules           | `ansible/roles/prometheus/files/alerts.yml`            |
+| Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml`               |
 
-**Firewall:** app droplet **9090** and **9100** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22**, **9090** (`prometheus_ui_source_addresses`), and **3000** (`grafana_ui_source_addresses`).
+**Firewall:** app droplet **9090**, **9100**, and **9113** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22**, **9090** (`prometheus_ui_source_addresses`), and **3000** (`grafana_ui_source_addresses`).
 
 ### Provision and deploy
 
@@ -137,7 +187,7 @@ make server-monitoring
 
 ### Verification (for reviewers)
 
-1. Open **`http://<monitoring_ip>:9090/targets`** — jobs `node_exporter` and `bulletins_actuator` should be **UP**.
+1. Open **`http://<monitoring_ip>:9090/targets`** — jobs `node_exporter`, `bulletins_actuator`, and **`nginx`** should be **UP**.
 2. In **`http://<monitoring_ip>:9090/graph`**, run PromQL **`up`** — all series should be **`1`**.
 3. Optional:
 
@@ -152,13 +202,13 @@ Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `gro
 
 **Grafana** runs on the same monitoring droplet as Prometheus (`roles/grafana`), Docker network **`monitoring`**, port **3000**.
 
-| Item | Location |
-|------|----------|
-| Grafana UI | http://165.245.222.145:3000 |
-| Login | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`) |
+| Item                      | Location                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Grafana UI                | http://165.232.72.139:3000                                                                                                       |
+| Login                     | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`)                                     |
 | Datasources (provisioned) | `ansible/roles/grafana/templates/provisioning/datasources/datasources.yml.j2` — **Prometheus** + **Loki** (for later log panels) |
-| Dashboards (provisioned) | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins** |
-| UI captures | [`assets/grafana/`](assets/grafana/) (dashboard + ntfy examples) |
+| Dashboards (provisioned)  | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins**                                                           |
+| UI captures               | [`assets/grafana/`](assets/grafana/) (dashboard + ntfy examples)                                                                 |
 
 Volumes on the host: `/opt/grafana/data`, `/opt/grafana/provisioning` (datasources + dashboard JSON).
 
@@ -171,12 +221,12 @@ make server-monitoring       # Prometheus + Grafana
 
 ### Dashboards
 
-| Dashboard | Variables | Focus |
-|-----------|-----------|--------|
-| System resources | `$job`, `$instance` | CPU load, memory, disk, network (Node Exporter) |
-| Application health | `$job`, `$instance` | `up`, JVM memory, threads (Actuator) |
-| HTTP traffic | `$job`, `$instance` | Rates and latency by HTTP status |
-| Status Page | — | Service health; panels linked to alert rules |
+| Dashboard          | Variables                              | Focus                                                                              |
+| ------------------ | -------------------------------------- | ---------------------------------------------------------------------------------- |
+| System resources   | `$job`, `$instance`                    | CPU load, memory, disk, network (Node Exporter)                                    |
+| Application health | `$job`, `$instance`                    | `up`, JVM memory, threads (Actuator)                                               |
+| HTTP traffic       | `$job`, `$instance`, `$nginx_instance` | Actuator HTTP + Nginx stub_status (RPS, status codes, latency, active connections) |
+| Status Page        | —                                      | Service health; panels linked to alert rules                                       |
 
 Datasource **Loki** (`http://loki:3100`) is pre-provisioned with alert management disabled until Loki is deployed.
 
@@ -192,35 +242,35 @@ Example dashboard captures:
 
 Unified alerting is **provisioned from the repository** (same `make server-grafana` as dashboards). Notifications use **ntfy** (free, available in RF): Grafana sends a webhook to a small **`ntfy-relay`** container on the monitoring host, which posts **plain text** to `https://ntfy.sh/<topic>` (not raw JSON).
 
-| Item | Location |
-|------|----------|
-| Alert rules (YAML) | `ansible/roles/grafana/templates/provisioning/alerting/rules.yml.j2` |
-| Contact point | `ansible/roles/grafana/templates/provisioning/alerting/contactpoints.yml.j2` |
-| Notification policy | `ansible/roles/grafana/templates/provisioning/alerting/policies.yml.j2` |
-| Status dashboard | `ansible/roles/grafana/files/dashboards/status-page.json` (`bulletins-status`) |
-| ntfy topic (secret) | `vault_grafana_ntfy_topic` in `ansible/group_vars/app/vault.yml` |
-| ntfy relay | `ansible/roles/grafana/files/ntfy-relay/app.py` (webhook → plain text) |
+| Item                | Location                                                                       |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Alert rules (YAML)  | `ansible/roles/grafana/templates/provisioning/alerting/rules.yml.j2`           |
+| Contact point       | `ansible/roles/grafana/templates/provisioning/alerting/contactpoints.yml.j2`   |
+| Notification policy | `ansible/roles/grafana/templates/provisioning/alerting/policies.yml.j2`        |
+| Status dashboard    | `ansible/roles/grafana/files/dashboards/status-page.json` (`bulletins-status`) |
+| ntfy topic (secret) | `vault_grafana_ntfy_topic` in `ansible/group_vars/app/vault.yml`               |
+| ntfy relay          | `ansible/roles/grafana/files/ntfy-relay/app.py` (webhook → plain text)         |
 
 Control test rule pause via Ansible var `grafana_test_alert_paused` (default `true` in `roles/grafana/defaults/main.yml`).
 
 ### Critical scenarios
 
-| Alert | `for` | Labels | Linked panel (Status Page) |
-|-------|-------|--------|----------------------------|
-| Application scrape down | 5m | `severity=critical`, `service=bulletins` | Actuator stat |
-| Node exporter down | 5m | `severity=critical`, `service=bulletins` | Node stat |
-| High CPU load | 2m | `severity=warning` | CPU load |
-| Root disk almost full | 2m | `severity=warning` | Disk % |
-| Elevated HTTP 5xx | 2m | `severity=warning` | 5xx rate |
-| Manual test rule (`bull-test-alert`) | 0s | `severity=info` | — (paused by default) |
+| Alert                                | `for` | Labels                                   | Linked panel (Status Page) |
+| ------------------------------------ | ----- | ---------------------------------------- | -------------------------- |
+| Application scrape down              | 5m    | `severity=critical`, `service=bulletins` | Actuator stat              |
+| Node exporter down                   | 5m    | `severity=critical`, `service=bulletins` | Node stat                  |
+| High CPU load                        | 2m    | `severity=warning`                       | CPU load                   |
+| Root disk almost full                | 2m    | `severity=warning`                       | Disk %                     |
+| Elevated HTTP 5xx                    | 2m    | `severity=warning`                       | 5xx rate                   |
+| Manual test rule (`bull-test-alert`) | 0s    | `severity=info`                          | — (paused by default)      |
 
 Thresholds: `ansible/group_vars/monitoring/vars.yml` (`grafana_alert_*`).
 
 ### Where to look (reviewer)
 
-1. **Alert rules:** http://165.245.222.145:3000/alerting/list  
-2. **Contact points:** http://165.245.222.145:3000/alerting/notifications  
-3. **Status Page:** http://165.245.222.145:3000/d/bulletins-status/status-page  
+1. **Alert rules:** http://165.232.72.139:3000/alerting/list
+2. **Contact points:** http://165.232.72.139:3000/alerting/notifications
+3. **Status Page:** http://165.232.72.139:3000/d/bulletins-status/status-page
 
 ### Deploy / sync rules
 
@@ -269,7 +319,7 @@ Keep this structure in mind when running commands—backend tooling (`gradlew`, 
 Key variables are read directly by Spring Boot (see `src/main/resources/application.yml` and `application-prod.yml` for defaults):
 
 | Variable                     | Description                                                   | Default                                      |
-|------------------------------|---------------------------------------------------------------|----------------------------------------------|
+| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------- |
 | `SPRING_PROFILES_ACTIVE`     | Active Spring profile (`dev`, `prod`, etc.)                   | `dev`                                        |
 | `SPRING_DATASOURCE_URL`      | JDBC URL for PostgreSQL in `prod`                             | `jdbc:postgresql://localhost:5432/bulletins` |
 | `SPRING_DATASOURCE_USERNAME` | DB username                                                   | `postgres`                                   |
@@ -305,9 +355,9 @@ All other variables supported by Spring Boot can be overridden the same way; che
     ```
 
 3. Explore the API:
-   - `GET http://localhost:8080/api/bulletins`
-   - `GET http://localhost:8080/api/bulletins?page=1&perPage=9&sort=createdAt&order=DESC&state=PUBLISHED&search=laptop`
-   - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+    - `GET http://localhost:8080/api/bulletins`
+    - `GET http://localhost:8080/api/bulletins?page=1&perPage=9&sort=createdAt&order=DESC&state=PUBLISHED&search=laptop`
+    - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 
 `/api/bulletins` accepts pagination (`page`, `perPage`), sorting (`sort`, `order`) and filters (`state`, `search`). Filters are processed via JPA Specifications so the same contract is available to the React Admin frontend.
 

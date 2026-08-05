@@ -47,7 +47,7 @@ variable "spaces_secret_key" {
 }
 
 variable "metrics_source_addresses" {
-  description = "Inbound sources for app metrics (9090, 9100). If null, only the monitoring droplet public IP /32 is allowed."
+  description = "Inbound sources for app metrics (9090, 9100, 9113). If null, only the monitoring droplet public IP /32 is allowed."
   type        = list(string)
   default     = null
 }

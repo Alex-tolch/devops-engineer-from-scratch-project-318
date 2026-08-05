@@ -40,3 +40,9 @@ prometheus_scrape_jobs:
     basic_auth: true
     targets:
       - "{{ app_scrape_address }}:{{ hostvars[groups['app'][0]]['metrics_proxy_port'] | default(9090) }}"
+  - name: nginx
+    metrics_path: /metrics
+    scheme: http
+    basic_auth: false
+    targets:
+      - "{{ app_scrape_address }}:{{ hostvars[groups['app'][0]]['nginx_exporter_port'] | default(9113) }}"

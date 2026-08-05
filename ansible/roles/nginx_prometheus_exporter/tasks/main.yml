@@ -1,0 +1,41 @@
+---
+- name: Download nginx-prometheus-exporter archive
+  ansible.builtin.get_url:
+    url: >-
+      {{ nginx_exporter_download_base }}/v{{ nginx_exporter_version }}/nginx-prometheus-exporter_{{ nginx_exporter_version }}_linux_amd64.tar.gz
+    dest: /tmp/nginx-prometheus-exporter-{{ nginx_exporter_version }}.linux-amd64.tar.gz
+    mode: "0644"
+  register: nginx_exporter_archive
+
+- name: Unpack nginx-prometheus-exporter binary
+  ansible.builtin.unarchive:
+    src: /tmp/nginx-prometheus-exporter-{{ nginx_exporter_version }}.linux-amd64.tar.gz
+    dest: /tmp
+    remote_src: true
+    creates: /tmp/nginx-prometheus-exporter
+
+- name: Install nginx-prometheus-exporter binary
+  ansible.builtin.copy:
+    src: /tmp/nginx-prometheus-exporter
+    dest: /usr/local/bin/nginx-prometheus-exporter
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+  notify: Restart nginx prometheus exporter
+
+- name: Install nginx-prometheus-exporter systemd unit
+  ansible.builtin.template:
+    src: nginx_prometheus_exporter.service.j2
+    dest: /etc/systemd/system/nginx_prometheus_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nginx prometheus exporter
+
+- name: Enable and start nginx-prometheus-exporter
+  ansible.builtin.systemd:
+    name: nginx_prometheus_exporter
+    enabled: true
+    state: started
+    daemon_reload: true

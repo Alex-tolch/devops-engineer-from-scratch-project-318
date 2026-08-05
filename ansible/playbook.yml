@@ -14,6 +14,8 @@
       tags: [setup, monitoring, node_exporter]
     - role: metrics_proxy
       tags: [setup, monitoring, metrics_proxy]
+    - role: nginx_prometheus_exporter
+      tags: [setup, monitoring, nginx_exporter]
 
 - name: Deploy Prometheus monitoring server
   hosts: monitoring

@@ -20,7 +20,8 @@ make -C .. grafana-test-alert   # 2-minute ntfy notification test
 | Role | Host | Purpose |
 |------|------|---------|
 | `roles/node_exporter` | app | Node Exporter (9100) |
-| `roles/metrics_proxy` | app | Nginx → Actuator on 9090, basic auth |
+| `roles/metrics_proxy` | app | Nginx → Actuator on 9090, basic auth, `stub_status` |
+| `roles/nginx_prometheus_exporter` | app | nginx-prometheus-exporter (9113) |
 | `roles/prometheus` | monitoring | Prometheus in Docker, network `monitoring` |
 | `roles/grafana` | monitoring | Grafana, dashboards, alerting, `ntfy-relay` |
 

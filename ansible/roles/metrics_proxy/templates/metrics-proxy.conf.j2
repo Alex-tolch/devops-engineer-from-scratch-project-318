@@ -56,4 +56,15 @@ server {
     location = /metrics {
         return 301 /actuator/prometheus;
     }
+
+    location = {{ nginx_stub_status_path }} {
+        stub_status;
+        access_log off;
+        satisfy any;
+        allow 127.0.0.1;
+{% for cidr in metrics_stub_status_allow_cidrs %}
+        allow {{ cidr }};
+{% endfor %}
+        deny all;
+    }
 }

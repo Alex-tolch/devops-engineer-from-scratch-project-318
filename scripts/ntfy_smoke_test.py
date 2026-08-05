@@ -9,7 +9,7 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-GRAFANA = os.environ.get("GRAFANA_URL", "http://165.245.222.145:3000")
+GRAFANA = os.environ.get("GRAFANA_URL", "http://165.232.72.139:3000")
 USER = os.environ.get("GRAFANA_USER", "admin")
 ROOT = Path(__file__).resolve().parents[1]
 VAULT = ROOT / "ansible/group_vars/app/vault.yml"

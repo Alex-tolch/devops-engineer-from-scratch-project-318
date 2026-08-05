@@ -1,0 +1,6 @@
+---
+- name: Restart nginx prometheus exporter
+  ansible.builtin.systemd:
+    name: nginx_prometheus_exporter
+    state: restarted
+    daemon_reload: true

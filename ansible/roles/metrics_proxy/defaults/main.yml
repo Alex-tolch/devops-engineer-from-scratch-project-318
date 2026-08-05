@@ -5,3 +5,5 @@ metrics_actuator_upstream_port: "{{ metrics_actuator_host_port }}"
 metrics_basic_auth_user: metrics
 metrics_access_log: /var/log/nginx/metrics-access.json
 metrics_error_log: /var/log/nginx/metrics-error.log
+nginx_stub_status_path: /stub_status
+metrics_stub_status_allow_cidrs: []

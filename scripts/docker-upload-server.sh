@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 IMAGE="${DOCKER_IMAGE:-ghcr.io/alex-tolch/devops-engineer-from-scratch-project-318:latest}"
-HOST="${DEPLOY_HOST:-104.248.240.149}"
+HOST="${DEPLOY_HOST:-64.226.67.71}"
 SSH_USER="${DEPLOY_SSH_USER:-root}"
 NO_CACHE="${NO_CACHE:-}"
 

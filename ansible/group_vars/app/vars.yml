@@ -13,6 +13,11 @@ metrics_actuator_host_port: 9091
 metrics_basic_auth_user: metrics
 metrics_basic_auth_password: "{{ vault_metrics_basic_auth_password }}"
 
+nginx_exporter_port: 9113
+nginx_stub_status_path: /stub_status
+metrics_stub_status_allow_cidrs:
+  - "{{ hostvars[groups['monitoring'][0]]['ansible_host'] }}/32"
+
 # Example: override scrape sources (default: monitoring droplet /32 only).
 # monitoring_source_cidrs:
 #   - "203.0.113.50/32"
