@@ -104,7 +104,7 @@ server-deploy: ansible-setup ansible-deploy
 server-monitoring: ansible-setup
 	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
 	@chmod 644 $(VAULT_PASS_FILE)
-	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus,grafana"
+	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus,loki,grafana"
 
 server-grafana: ansible-setup ansible-grafana
 

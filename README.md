@@ -196,7 +196,52 @@ export MONITORING_HOST=<monitoring_ip>
 curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=up" | jq '.data.result[] | {job: .metric.job, instance: .metric.instance, value: .value[1]}'
 ```
 
-Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `group_vars/monitoring/vars.yml` — no manual edit of the rendered config on the server.
+Add future components by extending Ansible roles / `group_vars` — no manual edit of the rendered config on the server.
+
+## Observability (step 7): Promtail + Loki
+
+Centralized logs: **JSON stdout** from the Spring app (`logback-spring.xml`: `app`, `environment`, `instance`, `level`, `message`, MDC) and **JSON Nginx access** (`metrics-access.json`: `status`, `request_time`, `remote_addr`, …). **Promtail** on the app host (Docker) ships to **Loki** on monitoring (Docker + volume, network `monitoring`).
+
+| Item | Location |
+|------|----------|
+| Loki | `ansible/roles/loki/` — `/opt/loki`, port **3100** (host bind; DO firewall: **app droplet `/32` only**) |
+| Promtail | `ansible/roles/promtail/` — `/opt/promtail`, `docker_sd_configs` + Nginx file scrape |
+| Labels | `job`, `env`, `app`, `host` (+ `status`, `remote_addr` from Nginx JSON pipeline) |
+| Grafana | Datasource `http://loki:3100`, dashboard [**Logs (Loki)**](http://165.232.72.139:3000/d/bulletins-logs/logs-loki) (`logs-loki.json`) |
+| Log alert | *Nginx 5xx log rate elevated (Loki)* in `rules.yml.j2` |
+
+Optional push auth (if enabled later): `vault_loki_push_username` / `vault_loki_push_password` in vault (referenced in `promtail-config.yml.j2`).
+
+### Deploy
+
+```bash
+cd terraform && terraform apply   # opens :3100 on monitoring for app → Loki push
+make server-prepare               # app: Promtail
+make server-monitoring            # Loki + Grafana dashboards/alerts
+```
+
+### Verification
+
+```bash
+export APP_HOST=64.226.67.71
+export MONITORING_HOST=165.232.72.139
+export METRICS_PASS='…'   # vault_metrics_basic_auth_password
+METRICS_PASS="$METRICS_PASS" python3 scripts/loki_smoke_test.py
+```
+
+Grafana → **Explore** → Loki:
+
+```logql
+{job="nginx-metrics"} | json | status >= 500
+{job="bulletins-app"} | json | level="ERROR"
+{job="nginx-metrics"} | json | remote_addr="<client-ip>"
+```
+
+Confirm application JSON shape (local or on server):
+
+```bash
+ssh root@$APP_HOST 'docker logs bulletins-app-1 2>&1 | tail -1 | jq .'
+```
 
 ## Observability (step 4): Grafana
 
@@ -206,7 +251,7 @@ Add future exporters (Nginx, Loki) by extending `prometheus_scrape_jobs` in `gro
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Grafana UI                | http://165.232.72.139:3000                                                                                                       |
 | Login                     | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`)                                     |
-| Datasources (provisioned) | `ansible/roles/grafana/templates/provisioning/datasources/datasources.yml.j2` — **Prometheus** + **Loki** (for later log panels) |
+| Datasources (provisioned) | `datasources.yml.j2` — **Prometheus** + **Loki** (`http://loki:3100`) |
 | Dashboards (provisioned)  | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins**                                                           |
 | UI captures               | [`assets/grafana/`](assets/grafana/) (dashboard + ntfy examples)                                                                 |
 
@@ -227,8 +272,9 @@ make server-monitoring       # Prometheus + Grafana
 | Application health | `$job`, `$instance`                    | `up`, JVM memory, threads (Actuator)                                               |
 | HTTP traffic       | `$job`, `$instance`, `$nginx_instance` | Actuator HTTP + Nginx stub_status (RPS, status codes, latency, active connections) |
 | Status Page        | —                                      | Service health; panels linked to alert rules                                       |
+| Logs (Loki)        | `$job`, `$app`, `$env`, `$host`, `$search` | 5xx, latency, log stream, filter by client IP (`remote_addr`)                |
 
-Datasource **Loki** (`http://loki:3100`) is pre-provisioned with alert management disabled until Loki is deployed.
+Datasource **Loki** is on the Docker network `monitoring`; Grafana queries `http://loki:3100` (log-based alerts enabled).
 
 Example dashboard captures:
 

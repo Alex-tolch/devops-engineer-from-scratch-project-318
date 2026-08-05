@@ -48,6 +48,7 @@ locals {
     var.metrics_source_addresses,
     ["${digitalocean_droplet.monitoring.ipv4_address}/32"]
   )
+  loki_push_sources = ["${digitalocean_droplet.app.ipv4_address}/32"]
 }
 
 resource "digitalocean_database_cluster" "postgres" {
@@ -160,6 +161,12 @@ resource "digitalocean_firewall" "monitoring" {
     protocol         = "tcp"
     port_range       = "3000"
     source_addresses = var.grafana_ui_source_addresses
+  }
+
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "3100"
+    source_addresses = local.loki_push_sources
   }
 
   outbound_rule {

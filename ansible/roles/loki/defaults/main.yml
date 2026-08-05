@@ -1,0 +1,9 @@
+loki_deploy_dir: /opt/loki
+loki_config_dir: "{{ loki_deploy_dir }}/config"
+loki_data_dir: "{{ loki_deploy_dir }}/data"
+loki_image: grafana/loki:3.2.1
+loki_port: 3100
+# Bind on host; restrict ingress in Terraform (app droplet only).
+loki_bind_address: "0.0.0.0"
+loki_docker_network: monitoring
+loki_auth_enabled: false

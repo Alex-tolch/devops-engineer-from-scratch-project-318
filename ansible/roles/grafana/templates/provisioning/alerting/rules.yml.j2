@@ -336,3 +336,60 @@ groups:
           severity: info
           service: bulletins
         isPaused: {{ grafana_test_alert_paused | bool }}
+
+  - orgId: 1
+    name: bulletins-logs
+    folder: Bulletins
+    interval: 1m
+    rules:
+      - uid: bull-loki-nginx-5xx
+        title: Nginx 5xx log rate elevated (Loki)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              editorMode: code
+              expr: sum(rate({job="nginx-metrics"} | json | status >= 500 [5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [{{ grafana_alert_5xx_rate_threshold }}]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        dashboardUid: bulletins-logs
+        panelId: 2
+        noDataState: OK
+        execErrState: Alerting
+        for: {{ grafana_alert_for_short }}
+        annotations:
+          summary: Elevated 5xx responses in Nginx access logs
+          description: LogQL rate of status>=500 exceeded {{ grafana_alert_5xx_rate_threshold }} for {{ grafana_alert_for_short }}.
+        labels:
+          severity: warning
+          service: bulletins
+        isPaused: false

@@ -1,0 +1,11 @@
+promtail_deploy_dir: /opt/promtail
+promtail_config_dir: "{{ promtail_deploy_dir }}/config"
+promtail_image: grafana/promtail:3.2.1
+promtail_app_name: bulletins
+promtail_env: prod
+promtail_job_app: bulletins-app
+promtail_job_nginx: nginx-metrics
+promtail_nginx_access_log: /var/log/nginx/metrics-access.json
+promtail_positions_file: /var/lib/promtail/positions.yaml
+# Set in group_vars/app from monitoring host inventory.
+promtail_loki_push_url: "http://127.0.0.1:3100/loki/api/v1/push"

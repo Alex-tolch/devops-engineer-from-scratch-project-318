@@ -18,6 +18,9 @@ nginx_stub_status_path: /stub_status
 metrics_stub_status_allow_cidrs:
   - "{{ hostvars[groups['monitoring'][0]]['ansible_host'] }}/32"
 
+promtail_host_label: "{{ ansible_host }}"
+promtail_loki_push_url: "http://{{ hostvars[groups['monitoring'][0]]['ansible_host'] }}:3100/loki/api/v1/push"
+
 # Example: override scrape sources (default: monitoring droplet /32 only).
 # monitoring_source_cidrs:
 #   - "203.0.113.50/32"

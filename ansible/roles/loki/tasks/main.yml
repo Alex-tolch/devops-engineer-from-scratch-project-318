@@ -1,0 +1,56 @@
+---
+- name: Create Loki directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ loki_deploy_dir }}"
+    - "{{ loki_config_dir }}"
+    - "{{ loki_data_dir }}"
+
+- name: Set Loki data directory ownership
+  ansible.builtin.file:
+    path: "{{ loki_data_dir }}"
+    owner: "10001"
+    group: "10001"
+    mode: "0755"
+
+- name: Ensure monitoring Docker network exists
+  community.docker.docker_network:
+    name: "{{ loki_docker_network }}"
+    state: present
+
+- name: Deploy Loki configuration
+  ansible.builtin.template:
+    src: loki-config.yml.j2
+    dest: "{{ loki_config_dir }}/loki-config.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Loki stack
+
+- name: Deploy Loki docker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ loki_deploy_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Loki stack
+
+- name: Pull Loki image
+  community.docker.docker_image:
+    name: "{{ loki_image }}"
+    source: pull
+    force_source: true
+
+- name: Start Loki with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ loki_deploy_dir }}"
+    state: present
+    pull: never
+    recreate: always
+    remove_orphans: true

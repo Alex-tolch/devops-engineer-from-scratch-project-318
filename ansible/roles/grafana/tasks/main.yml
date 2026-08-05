@@ -53,6 +53,7 @@
     - application-health.json
     - http-traffic.json
     - status-page.json
+    - logs-loki.json
   notify: Restart Grafana stack
 
 - name: Deploy Grafana alerting contact points

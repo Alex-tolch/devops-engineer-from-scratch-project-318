@@ -1,0 +1,43 @@
+---
+- name: Create Promtail directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ promtail_deploy_dir }}"
+    - "{{ promtail_config_dir }}"
+
+- name: Deploy Promtail configuration
+  ansible.builtin.template:
+    src: promtail-config.yml.j2
+    dest: "{{ promtail_config_dir }}/promtail-config.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart Promtail stack
+
+- name: Deploy Promtail docker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ promtail_deploy_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Promtail stack
+
+- name: Pull Promtail image
+  community.docker.docker_image:
+    name: "{{ promtail_image }}"
+    source: pull
+    force_source: true
+
+- name: Start Promtail with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ promtail_deploy_dir }}"
+    state: present
+    pull: never
+    recreate: always
+    remove_orphans: true

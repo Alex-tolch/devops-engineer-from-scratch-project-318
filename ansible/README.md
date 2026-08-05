@@ -6,7 +6,8 @@ cp inventory.ini.example inventory.ini
 cp group_vars/app/vault.yml.example group_vars/app/vault.yml   # first time only
 cp .vault-password.example .vault-password
 ansible-vault encrypt group_vars/app/vault.yml
-# add vault_metrics_basic_auth_password, vault_grafana_admin_password, vault_grafana_ntfy_topic via: make ansible-vault-edit
+# add vault_metrics_basic_auth_password, vault_grafana_admin_password, vault_grafana_ntfy_topic
+# optional: vault_loki_push_username, vault_loki_push_password via: make ansible-vault-edit
 
 make -C .. ansible-setup
 make -C .. server-prepare       # app: docker, app, node_exporter, nginx
@@ -22,7 +23,9 @@ make -C .. grafana-test-alert   # 2-minute ntfy notification test
 | `roles/node_exporter` | app | Node Exporter (9100) |
 | `roles/metrics_proxy` | app | Nginx → Actuator on 9090, basic auth, `stub_status` |
 | `roles/nginx_prometheus_exporter` | app | nginx-prometheus-exporter (9113) |
+| `roles/promtail` | app | Promtail (Docker) → Loki |
 | `roles/prometheus` | monitoring | Prometheus in Docker, network `monitoring` |
+| `roles/loki` | monitoring | Loki in Docker + persistent volume |
 | `roles/grafana` | monitoring | Grafana, dashboards, alerting, `ntfy-relay` |
 
 Scrape targets: [`group_vars/monitoring/vars.yml`](group_vars/monitoring/vars.yml). Prometheus alert rules: [`roles/prometheus/files/alerts.yml`](roles/prometheus/files/alerts.yml). Grafana alerting: [`roles/grafana/templates/provisioning/alerting/`](roles/grafana/templates/provisioning/alerting/). Config is validated with **promtool** during the Prometheus play.

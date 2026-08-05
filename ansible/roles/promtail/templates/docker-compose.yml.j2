@@ -1,0 +1,15 @@
+services:
+  promtail:
+    image: {{ promtail_image }}
+    container_name: promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - {{ promtail_config_dir }}/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log/nginx:/var/log/nginx:ro
+      - promtail-positions:/var/lib/promtail
+
+volumes:
+  promtail-positions:

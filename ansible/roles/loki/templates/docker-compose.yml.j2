@@ -1,0 +1,18 @@
+services:
+  loki:
+    image: {{ loki_image }}
+    container_name: loki
+    restart: unless-stopped
+    networks:
+      - {{ loki_docker_network }}
+    ports:
+      - "{{ loki_bind_address }}:{{ loki_port }}:3100"
+    volumes:
+      - {{ loki_config_dir }}/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - {{ loki_data_dir }}:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+networks:
+  {{ loki_docker_network }}:
+    name: {{ loki_docker_network }}
+    external: true
