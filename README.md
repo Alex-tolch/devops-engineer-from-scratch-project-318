@@ -286,6 +286,7 @@ Expect a **plain-text** ntfy message. Optional helper (lists contact points + di
 In **Alerting → list**, **Grafana-managed** groups under **Bulletins** are in scope for this step. **Data source-managed** rules from Prometheus `alerts.yml` may show **No Data** — that is separate from Grafana alerting.
 
 ![ntfy notification example](assets/grafana/alert-ntfy.png)
+
 ## Observability (step 6): Nginx Prometheus Exporter
 
 The **metrics reverse proxy** Nginx (`roles/metrics_proxy`) exposes **`stub_status`** at **`/stub_status`** on port **9090** (same listener as Actuator). Access is limited by **Nginx `allow`** (`127.0.0.1` for the local exporter, monitoring droplet `/32`) and **HTTP basic auth** (`satisfy any`). **nginx-prometheus-exporter** (`roles/nginx_prometheus_exporter`, systemd) scrapes `http://127.0.0.1:9090/stub_status` and publishes Prometheus metrics on **9113**.
@@ -378,7 +379,6 @@ Confirm application JSON shape (local or on server):
 ```bash
 ssh root@$APP_HOST 'docker logs bulletins-app-1 2>&1 | tail -1 | jq .'
 ```
-
 
 ---
 
