@@ -84,3 +84,15 @@ jobs:
             -v "${{ github.workspace }}/ansible/roles/prometheus/files:/etc/prometheus:ro" \
             prom/prometheus:v2.54.1 \
             check rules /etc/prometheus/alerts.yml
+
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ansible-lint
+        run: pip install ansible-core ansible-lint
+      - name: Lint Ansible playbooks
+        run: make ansible-lint

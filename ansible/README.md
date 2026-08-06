@@ -16,6 +16,9 @@ make -C .. ansible-monitoring   # redeploy app + exporters on app host
 make -C .. server-monitoring    # Prometheus + Grafana on monitoring host
 make -C .. server-grafana       # Grafana / dashboards / alerting only
 make -C .. grafana-test-alert   # 2-minute ntfy notification test
+make -C .. ansible-lint         # ansible-lint (pip install ansible-lint)
+make -C .. ansible-test         # ansible ping all hosts
+METRICS_PASS='…' make -C .. smoke
 ```
 
 | Role | Host | Purpose |

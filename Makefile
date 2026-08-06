@@ -31,9 +31,24 @@ ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS
 ANSIBLE_PROMETHEUS = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml --limit monitoring
 TERRAFORM_DIR := terraform
 
+# Lint playbooks (requires: pip install ansible-core ansible-lint)
+ansible-lint:
+	cd $(ANSIBLE_DIR) && ansible-lint .
+
+ansible-test:
+	bash scripts/ansible_ping.sh
+
+smoke:
+	bash scripts/smoke.sh
+
+# Infra checks after deploy (lint playbooks, SSH ping, HTTP smoke). App unit tests: make test.
+verify: ansible-lint ansible-test smoke
+
 .PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
-	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana server-prepare server-deploy server-monitoring server-grafana grafana-test-alert
+	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana \
+	ansible-lint ansible-test smoke verify \
+	server-prepare server-deploy server-monitoring server-grafana deploy grafana-test-alert
 
 docker-build:
 	docker build -t $(DOCKER_IMAGE) .
@@ -107,6 +122,9 @@ server-monitoring: ansible-setup
 	$(ANSIBLE_PROMETHEUS) --tags "setup,prometheus,loki,grafana"
 
 server-grafana: ansible-setup ansible-grafana
+
+# Full stack on both droplets (after terraform + inventory + vault).
+deploy: server-prepare server-deploy server-monitoring
 
 # Provisioned test rule: no Resume toggle in UI — briefly enable via Ansible, then pause again.
 grafana-test-alert:

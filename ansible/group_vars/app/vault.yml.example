@@ -1,0 +1,13 @@
+---
+# Copy to vault.yml, fill values, then: ansible-vault encrypt group_vars/app/vault.yml
+db_host: private-<cluster>.j.db.ondigitalocean.com
+db_password: <from terraform output database_password>
+spaces_bucket: <spaces bucket name>
+spaces_access_key: <DO spaces key>
+spaces_secret_key: <DO spaces secret>
+vault_metrics_basic_auth_password: <metrics nginx basic auth>
+vault_grafana_admin_password: <grafana admin>
+vault_grafana_ntfy_topic: <ntfy.sh topic name>
+# Optional Loki push basic auth (if enabled on Loki):
+# vault_loki_push_username: promtail
+# vault_loki_push_password: <secret>

@@ -6,6 +6,46 @@
 
 Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) with Docker, CI, Terraform (DigitalOcean), Ansible.
 
+### Infrastructure reference (IPs, ports, URLs, notifications)
+
+**Deployed lab (DigitalOcean):** app **`64.226.67.71`**, monitoring **`165.232.72.139`**. In playbooks use `inventory.ini` / `group_vars`, not these literals.
+
+```bash
+export APP_HOST=64.226.67.71
+export MONITORING_HOST=165.232.72.139
+# After a fresh terraform apply, outputs should match:
+# APP_HOST="$(terraform -chdir=terraform output -raw droplet_ip)"
+# MONITORING_HOST="$(terraform -chdir=terraform output -raw monitoring_ip)"
+```
+
+| Role       | Inventory group | Host IP          | Ports (host)                                                                                        | Public URL                                                                      |
+| ---------- | --------------- | ---------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| App        | `[app]`         | `64.226.67.71`   | **8080** API, **9090** Actuator+Nginx (basic auth), **9100** node_exporter, **9113** nginx exporter | http://64.226.67.71:8080                                                        |
+| Monitoring | `[monitoring]`  | `165.232.72.139` | **9090** Prometheus, **3000** Grafana, **3100** Loki (push from app `/32` only)                     | [Prometheus](http://165.232.72.139:9090), [Grafana](http://165.232.72.139:3000) |
+| Local dev  | —               | —                | **8080**, **9090** Actuator                                                                         | http://localhost:8080                                                           |
+
+Promtail on the app host pushes to `http://165.232.72.139:3100/loki/api/v1/push`.
+
+**Grafana:** http://165.232.72.139:3000 — login `admin`, password `vault_grafana_admin_password` in encrypted vault. Dashboards: [System resources](http://165.232.72.139:3000/d/bulletins-system/system-resources), [Application health](http://165.232.72.139:3000/d/bulletins-app/application-health), [HTTP traffic](http://165.232.72.139:3000/d/bulletins-http/http-traffic), [Logs (Loki)](http://165.232.72.139:3000/d/bulletins-logs/logs-loki), [Status Page](http://165.232.72.139:3000/d/bulletins-status/status-page). Alerting: [rules](http://165.232.72.139:3000/alerting/list), [contact points](http://165.232.72.139:3000/alerting/notifications).
+
+**Notifications:** primary channel **ntfy** — topic in `vault_grafana_ntfy_topic`, public subscribe URL `https://ntfy.sh/<topic>`, delivery path Grafana → `ntfy-relay` (monitoring Docker) → ntfy.sh. Test delivery: `make grafana-test-alert` or `GRAFANA_PASS='…' python3 scripts/ntfy_smoke_test.py`.
+
+**Screenshots:** [`assets/grafana/`](assets/grafana/) and duplicate: [`__data__/assets/grafana/`](__data__/assets/grafana/).
+
+**Secrets (Ansible Vault, `ansible/group_vars/app/vault.yml`):** `db_host`, `db_password`, Spaces keys, `vault_metrics_basic_auth_password`, `vault_grafana_admin_password`, `vault_grafana_ntfy_topic`; optional `vault_loki_push_*`. Template: [`vault.yml.example`](ansible/group_vars/app/vault.yml.example). Password file: copy [`ansible/.vault-password.example`](ansible/.vault-password.example) → `ansible/.vault-password`.
+
+### Deploy from scratch (both VMs)
+
+1. **Fork** this repository and clone your fork. Install **Terraform**, **Ansible**, **Docker**, **Make**, **JDK 21+**, **Python 3** (smoke scripts).
+2. **DigitalOcean:** create [API token](https://cloud.digitalocean.com/account/api/tokens) → `export DO_TOKEN=…`. Optional: Spaces keys if you use object storage in Terraform.
+3. **SSH:** `ssh-keygen -t ed25519` (or RSA); register the public key in DO; private key path must match `ansible_ssh_private_key_file` in inventory (default `~/.ssh/id_rsa`).
+4. **Terraform:** `cp terraform/terraform.tfvars.example terraform/terraform.tfvars` (if present) or set variables via env/`tfvars`; `make terraform-init && make terraform-apply`. Note `droplet_ip`, `monitoring_ip`, `database_password` from outputs.
+5. **Managed Postgres (prod):** put `db_host` / `db_password` into vault; once per cluster run [`scripts/fix-do-postgres-schema.sql`](scripts/fix-do-postgres-schema.sql) as `doadmin` if the app fails with `permission denied for schema public`.
+6. **Ansible inventory:** `cp ansible/inventory.ini.example ansible/inventory.ini` — set app **`64.226.67.71`** and monitoring **`165.232.72.139`** (or current `terraform output`), `docker_image` to your GHCR image.
+7. **Vault:** `cp ansible/group_vars/app/vault.yml.example ansible/group_vars/app/vault.yml`, fill secrets, `make ansible-vault-encrypt` (requires `ansible/.vault-password`).
+8. **Deploy:** `make server-prepare` then `make server-deploy` on the app host; `make server-monitoring` on monitoring. Shortcut: `make deploy` (all three). If GHCR is private: `make docker-upload-server` before deploy.
+9. **Verify:** `make ansible-lint` (no SSH), `make ansible-test` (ping), `export METRICS_PASS='…'` and `make smoke` (API, Prometheus, Grafana, optional Loki e2e). Manual: Grafana dashboards, `make grafana-test-alert`, confirm ntfy.
+
 | Item          | Location                                                                                                                    |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Ansible       | [`ansible/`](ansible/)                                                                                                      |
@@ -13,16 +53,18 @@ Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-comp
 | App URL       | http://64.226.67.71:8080                                                                                                    |
 | Prometheus    | http://165.232.72.139:9090 ([`/graph`](http://165.232.72.139:9090/graph), [`/targets`](http://165.232.72.139:9090/targets)) |
 | Grafana       | http://165.232.72.139:3000 (login `admin`, password in vault: `vault_grafana_admin_password`)                               |
+| Lint / tests  | `make lint` (Java Spotless), `make test` (Gradle), `make ansible-lint`, `make ansible-test`, `make smoke`, `make verify`    |
 | Alerting test | `make grafana-test-alert` (unpauses provisioned test rule ~2 min, then pauses again)                                        |
 
 ```bash
-make test
+make test && make ansible-lint
 make docker-build
 make compose-up
 DO_TOKEN=... bash scripts/do-provision.sh   # optional
 cp ansible/inventory.ini.example ansible/inventory.ini
 make server-prepare && make server-deploy
-make server-monitoring   # Prometheus + Grafana (after inventory has monitoring_ip)
+make server-monitoring
+make ansible-test && METRICS_PASS='…' make smoke
 ```
 
 **Updating the app on the droplet:** `make server-deploy` alone does not replace the image if GHCR pull is denied (private package). Build locally and load over SSH, then recreate the container:
@@ -68,7 +110,7 @@ make server-prepare          # first install
 make ansible-monitoring      # after config changes
 ```
 
-### Verification (`<app-host>` = droplet IP)
+### Verification (app host `64.226.67.71`)
 
 Local/docker (no Nginx, direct Actuator):
 
@@ -109,6 +151,141 @@ curl -s "http://${APP_HOST}:9100/metrics" | grep -E '^node_load1|^node_memory_Me
 
 Collectors enabled in Ansible: `systemd`, `processes`. Application metrics use Micrometer Prometheus registry (Spring Boot Actuator).
 
+## Observability (step 3): Prometheus server
+
+A separate **monitoring** droplet (Terraform group equivalent: inventory `[monitoring]`) runs **Prometheus** via Ansible (`roles/prometheus`). Docker network **`monitoring`** isolates the stack for future Grafana / Alertmanager.
+
+| Item                  | Location                                                                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Monitoring VM         | `165.232.72.139` (`terraform output monitoring_ip`)                                                                         |
+| Prometheus UI         | http://165.232.72.139:9090 — [`/graph`](http://165.232.72.139:9090/graph), [`/targets`](http://165.232.72.139:9090/targets) |
+| Config (templated)    | `ansible/roles/prometheus/templates/prometheus.yml.j2`                                                                      |
+| Alert rules           | `ansible/roles/prometheus/files/alerts.yml`                                                                                 |
+| Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml`                                                                                    |
+
+**Firewall:** app droplet **9090**, **9100**, and **9113** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22**, **9090** (`prometheus_ui_source_addresses`), and **3000** (`grafana_ui_source_addresses`).
+
+### Provision and deploy
+
+```bash
+cd terraform && terraform apply
+# Update ansible/inventory.ini with droplet_ip and monitoring_ip
+make server-monitoring
+```
+
+Repeat deploy after config changes:
+
+```bash
+make server-monitoring
+```
+
+### Verification
+
+1. Open **http://165.232.72.139:9090/targets** — jobs `node_exporter`, `bulletins_actuator`, and **`nginx`** should be **UP**.
+2. In **http://165.232.72.139:9090/graph**, run PromQL **`up`** — all series should be **`1`**.
+3. Optional:
+
+```bash
+export MONITORING_HOST=165.232.72.139
+curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=up" | jq '.data.result[] | {job: .metric.job, instance: .metric.instance, value: .value[1]}'
+```
+
+Add future components by extending Ansible roles / `group_vars` — no manual edit of the rendered config on the server.
+
+## Observability (step 4): Grafana
+
+**Grafana** runs on the same monitoring droplet as Prometheus (`roles/grafana`), Docker network **`monitoring`**, port **3000**.
+
+| Item                      | Location                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| Grafana UI                | http://165.232.72.139:3000                                                                      |
+| Login                     | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`)    |
+| Datasources (provisioned) | `datasources.yml.j2` — **Prometheus** + **Loki** (`http://loki:3100`)                           |
+| Dashboards (provisioned)  | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins**                          |
+| UI captures               | [`assets/grafana/`](assets/grafana/) and [`__data__/assets/grafana/`](__data__/assets/grafana/) |
+
+Volumes on the host: `/opt/grafana/data`, `/opt/grafana/provisioning` (datasources + dashboard JSON).
+
+### Deploy / update dashboards
+
+```bash
+make server-grafana          # Grafana only (after Docker exists on monitoring host)
+make server-monitoring       # Prometheus + Grafana
+```
+
+### Dashboards
+
+| Dashboard          | Variables                                  | Focus                                                                              |
+| ------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| System resources   | `$job`, `$instance`                        | CPU load, memory, disk, network (Node Exporter)                                    |
+| Application health | `$job`, `$instance`                        | `up`, JVM memory, threads (Actuator)                                               |
+| HTTP traffic       | `$job`, `$instance`, `$nginx_instance`     | Actuator HTTP + Nginx stub_status (RPS, status codes, latency, active connections) |
+| Status Page        | —                                          | Service health; panels linked to alert rules                                       |
+| Logs (Loki)        | `$job`, `$app`, `$env`, `$host`, `$search` | 5xx, latency, log stream, filter by client IP (`remote_addr`)                      |
+
+Datasource **Loki** is on the Docker network `monitoring`; Grafana queries `http://loki:3100` (log-based alerts enabled).
+
+Example dashboard captures:
+
+![System resources](assets/grafana/system-resources.png)
+
+![Application health](assets/grafana/application-health.png)
+
+![HTTP traffic](assets/grafana/http-traffic.png)
+
+## Observability (step 5): Grafana alerting
+
+Unified alerting is **provisioned from the repository** (same `make server-grafana` as dashboards). Notifications use **ntfy**: Grafana sends a webhook to a small **`ntfy-relay`** container on the monitoring host, which posts **plain text** to `https://ntfy.sh/<topic>` (not raw JSON).
+
+| Item                | Location                                                                       |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Alert rules (YAML)  | `ansible/roles/grafana/templates/provisioning/alerting/rules.yml.j2`           |
+| Contact point       | `ansible/roles/grafana/templates/provisioning/alerting/contactpoints.yml.j2`   |
+| Notification policy | `ansible/roles/grafana/templates/provisioning/alerting/policies.yml.j2`        |
+| Status dashboard    | `ansible/roles/grafana/files/dashboards/status-page.json` (`bulletins-status`) |
+| ntfy topic (secret) | `vault_grafana_ntfy_topic` in `ansible/group_vars/app/vault.yml`               |
+| ntfy relay          | `ansible/roles/grafana/files/ntfy-relay/app.py` (webhook → plain text)         |
+
+Control test rule pause via Ansible var `grafana_test_alert_paused` (default `true` in `roles/grafana/defaults/main.yml`).
+
+### Critical scenarios
+
+| Alert                                | `for` | Labels                                   | Linked panel (Status Page) |
+| ------------------------------------ | ----- | ---------------------------------------- | -------------------------- |
+| Application scrape down              | 5m    | `severity=critical`, `service=bulletins` | Actuator stat              |
+| Node exporter down                   | 5m    | `severity=critical`, `service=bulletins` | Node stat                  |
+| High CPU load                        | 2m    | `severity=warning`                       | CPU load                   |
+| Root disk almost full                | 2m    | `severity=warning`                       | Disk %                     |
+| Elevated HTTP 5xx                    | 2m    | `severity=warning`                       | 5xx rate                   |
+| Manual test rule (`bull-test-alert`) | 0s    | `severity=info`                          | — (paused by default)      |
+
+Thresholds: `ansible/group_vars/monitoring/vars.yml` (`grafana_alert_*`).
+
+1. **Alert rules:** http://165.232.72.139:3000/alerting/list
+2. **Contact points:** http://165.232.72.139:3000/alerting/notifications
+3. **Status Page:** http://165.232.72.139:3000/d/bulletins-status/status-page
+
+### Deploy / sync rules
+
+```bash
+make server-grafana
+```
+
+### Test notifications
+
+1. Subscribe to the ntfy topic: `https://ntfy.sh/<vault_grafana_ntfy_topic>` (in encrypted vault).
+2. Optional channel check (direct ntfy, no Grafana): `curl -d "test" "https://ntfy.sh/<topic>"`
+3. End-to-end (Grafana → `ntfy-relay` → ntfy): provisioned rule `bull-test-alert` stays paused (`grafana_test_alert_paused=true`); resume via Ansible, not the UI toggle on provisioned rules:
+
+```bash
+make grafana-test-alert
+```
+
+Expect a **plain-text** ntfy message. Optional helper (lists contact points + direct ntfy only): `GRAFANA_PASS='…' python3 scripts/ntfy_smoke_test.py`
+
+In **Alerting → list**, **Grafana-managed** groups under **Bulletins** are in scope for this step. **Data source-managed** rules from Prometheus `alerts.yml` may show **No Data** — that is separate from Grafana alerting.
+
+![ntfy notification example](assets/grafana/alert-ntfy.png)
 ## Observability (step 6): Nginx Prometheus Exporter
 
 The **metrics reverse proxy** Nginx (`roles/metrics_proxy`) exposes **`stub_status`** at **`/stub_status`** on port **9090** (same listener as Actuator). Access is limited by **Nginx `allow`** (`127.0.0.1` for the local exporter, monitoring droplet `/32`) and **HTTP basic auth** (`satisfy any`). **nginx-prometheus-exporter** (`roles/nginx_prometheus_exporter`, systemd) scrapes `http://127.0.0.1:9090/stub_status` and publishes Prometheus metrics on **9113**.
@@ -157,58 +334,17 @@ curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=rate(nginx_http_reque
 
 `promtool check config` runs automatically in the Prometheus Ansible role after each deploy.
 
-## Observability (step 3): Prometheus server
-
-A separate **monitoring** droplet (Terraform group equivalent: inventory `[monitoring]`) runs **Prometheus** via Ansible (`roles/prometheus`). Docker network **`monitoring`** isolates the stack for future Grafana / Alertmanager.
-
-| Item                  | Location                                               |
-| --------------------- | ------------------------------------------------------ |
-| Monitoring VM         | `terraform output monitoring_ip`                       |
-| Prometheus UI         | `http://<monitoring_ip>:9090` — `/graph`, `/targets`   |
-| Config (templated)    | `ansible/roles/prometheus/templates/prometheus.yml.j2` |
-| Alert rules           | `ansible/roles/prometheus/files/alerts.yml`            |
-| Scrape jobs / targets | `ansible/group_vars/monitoring/vars.yml`               |
-
-**Firewall:** app droplet **9090**, **9100**, and **9113** accept scrapes only from the monitoring droplet (`metrics_source_addresses = null` in Terraform → automatic `/32`). Monitoring droplet allows **22**, **9090** (`prometheus_ui_source_addresses`), and **3000** (`grafana_ui_source_addresses`).
-
-### Provision and deploy
-
-```bash
-cd terraform && terraform apply
-# Update ansible/inventory.ini with droplet_ip and monitoring_ip
-make server-monitoring
-```
-
-Repeat deploy after config changes:
-
-```bash
-make server-monitoring
-```
-
-### Verification (for reviewers)
-
-1. Open **`http://<monitoring_ip>:9090/targets`** — jobs `node_exporter`, `bulletins_actuator`, and **`nginx`** should be **UP**.
-2. In **`http://<monitoring_ip>:9090/graph`**, run PromQL **`up`** — all series should be **`1`**.
-3. Optional:
-
-```bash
-export MONITORING_HOST=<monitoring_ip>
-curl -s "http://${MONITORING_HOST}:9090/api/v1/query?query=up" | jq '.data.result[] | {job: .metric.job, instance: .metric.instance, value: .value[1]}'
-```
-
-Add future components by extending Ansible roles / `group_vars` — no manual edit of the rendered config on the server.
-
 ## Observability (step 7): Promtail + Loki
 
 Centralized logs: **JSON stdout** from the Spring app (`logback-spring.xml`: `app`, `environment`, `instance`, `level`, `message`, MDC) and **JSON Nginx access** (`metrics-access.json`: `status`, `request_time`, `remote_addr`, …). **Promtail** on the app host (Docker) ships to **Loki** on monitoring (Docker + volume, network `monitoring`).
 
-| Item | Location |
-|------|----------|
-| Loki | `ansible/roles/loki/` — `/opt/loki`, port **3100** (host bind; DO firewall: **app droplet `/32` only**) |
-| Promtail | `ansible/roles/promtail/` — `/opt/promtail`, `docker_sd_configs` + Nginx file scrape |
-| Labels | `job`, `env`, `app`, `host` (+ `status`, `remote_addr` from Nginx JSON pipeline) |
-| Grafana | Datasource `http://loki:3100`, dashboard [**Logs (Loki)**](http://165.232.72.139:3000/d/bulletins-logs/logs-loki) (`logs-loki.json`) |
-| Log alert | *Nginx 5xx log rate elevated (Loki)* in `rules.yml.j2` |
+| Item      | Location                                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Loki      | `ansible/roles/loki/` — `/opt/loki`, port **3100** on **165.232.72.139** (DO firewall: app **64.226.67.71/32** only)                 |
+| Promtail  | `ansible/roles/promtail/` — `/opt/promtail`, `docker_sd_configs` + Nginx file scrape                                                 |
+| Labels    | `job`, `env`, `app`, `host` (+ `status`, `remote_addr` from Nginx JSON pipeline)                                                     |
+| Grafana   | Datasource `http://loki:3100`, dashboard [**Logs (Loki)**](http://165.232.72.139:3000/d/bulletins-logs/logs-loki) (`logs-loki.json`) |
+| Log alert | _Nginx 5xx log rate elevated (Loki)_ in `rules.yml.j2`                                                                               |
 
 Optional push auth (if enabled later): `vault_loki_push_username` / `vault_loki_push_password` in vault (referenced in `promtail-config.yml.j2`).
 
@@ -243,102 +379,6 @@ Confirm application JSON shape (local or on server):
 ssh root@$APP_HOST 'docker logs bulletins-app-1 2>&1 | tail -1 | jq .'
 ```
 
-## Observability (step 4): Grafana
-
-**Grafana** runs on the same monitoring droplet as Prometheus (`roles/grafana`), Docker network **`monitoring`**, port **3000**.
-
-| Item                      | Location                                                                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Grafana UI                | http://165.232.72.139:3000                                                                                                       |
-| Login                     | `admin` (see `vault_grafana_admin_password` in encrypted `ansible/group_vars/app/vault.yml`)                                     |
-| Datasources (provisioned) | `datasources.yml.j2` — **Prometheus** + **Loki** (`http://loki:3100`) |
-| Dashboards (provisioned)  | `ansible/roles/grafana/files/dashboards/*.json` — folder **Bulletins**                                                           |
-| UI captures               | [`assets/grafana/`](assets/grafana/) (dashboard + ntfy examples)                                                                 |
-
-Volumes on the host: `/opt/grafana/data`, `/opt/grafana/provisioning` (datasources + dashboard JSON).
-
-### Deploy / update dashboards
-
-```bash
-make server-grafana          # Grafana only (after Docker exists on monitoring host)
-make server-monitoring       # Prometheus + Grafana
-```
-
-### Dashboards
-
-| Dashboard          | Variables                              | Focus                                                                              |
-| ------------------ | -------------------------------------- | ---------------------------------------------------------------------------------- |
-| System resources   | `$job`, `$instance`                    | CPU load, memory, disk, network (Node Exporter)                                    |
-| Application health | `$job`, `$instance`                    | `up`, JVM memory, threads (Actuator)                                               |
-| HTTP traffic       | `$job`, `$instance`, `$nginx_instance` | Actuator HTTP + Nginx stub_status (RPS, status codes, latency, active connections) |
-| Status Page        | —                                      | Service health; panels linked to alert rules                                       |
-| Logs (Loki)        | `$job`, `$app`, `$env`, `$host`, `$search` | 5xx, latency, log stream, filter by client IP (`remote_addr`)                |
-
-Datasource **Loki** is on the Docker network `monitoring`; Grafana queries `http://loki:3100` (log-based alerts enabled).
-
-Example dashboard captures:
-
-![System resources](assets/grafana/system-resources.png)
-
-![Application health](assets/grafana/application-health.png)
-
-![HTTP traffic](assets/grafana/http-traffic.png)
-
-## Observability (step 5): Grafana alerting
-
-Unified alerting is **provisioned from the repository** (same `make server-grafana` as dashboards). Notifications use **ntfy** (free, available in RF): Grafana sends a webhook to a small **`ntfy-relay`** container on the monitoring host, which posts **plain text** to `https://ntfy.sh/<topic>` (not raw JSON).
-
-| Item                | Location                                                                       |
-| ------------------- | ------------------------------------------------------------------------------ |
-| Alert rules (YAML)  | `ansible/roles/grafana/templates/provisioning/alerting/rules.yml.j2`           |
-| Contact point       | `ansible/roles/grafana/templates/provisioning/alerting/contactpoints.yml.j2`   |
-| Notification policy | `ansible/roles/grafana/templates/provisioning/alerting/policies.yml.j2`        |
-| Status dashboard    | `ansible/roles/grafana/files/dashboards/status-page.json` (`bulletins-status`) |
-| ntfy topic (secret) | `vault_grafana_ntfy_topic` in `ansible/group_vars/app/vault.yml`               |
-| ntfy relay          | `ansible/roles/grafana/files/ntfy-relay/app.py` (webhook → plain text)         |
-
-Control test rule pause via Ansible var `grafana_test_alert_paused` (default `true` in `roles/grafana/defaults/main.yml`).
-
-### Critical scenarios
-
-| Alert                                | `for` | Labels                                   | Linked panel (Status Page) |
-| ------------------------------------ | ----- | ---------------------------------------- | -------------------------- |
-| Application scrape down              | 5m    | `severity=critical`, `service=bulletins` | Actuator stat              |
-| Node exporter down                   | 5m    | `severity=critical`, `service=bulletins` | Node stat                  |
-| High CPU load                        | 2m    | `severity=warning`                       | CPU load                   |
-| Root disk almost full                | 2m    | `severity=warning`                       | Disk %                     |
-| Elevated HTTP 5xx                    | 2m    | `severity=warning`                       | 5xx rate                   |
-| Manual test rule (`bull-test-alert`) | 0s    | `severity=info`                          | — (paused by default)      |
-
-Thresholds: `ansible/group_vars/monitoring/vars.yml` (`grafana_alert_*`).
-
-### Where to look (reviewer)
-
-1. **Alert rules:** http://165.232.72.139:3000/alerting/list
-2. **Contact points:** http://165.232.72.139:3000/alerting/notifications
-3. **Status Page:** http://165.232.72.139:3000/d/bulletins-status/status-page
-
-### Deploy / sync rules
-
-```bash
-make server-grafana
-```
-
-### Test notifications
-
-1. Subscribe to the ntfy topic: `https://ntfy.sh/<vault_grafana_ntfy_topic>` (in encrypted vault).
-2. Optional channel check (direct ntfy, no Grafana): `curl -d "test" "https://ntfy.sh/<topic>"`
-3. End-to-end (Grafana → `ntfy-relay` → ntfy): provisioned rule `bull-test-alert` stays paused (`grafana_test_alert_paused=true`); resume via Ansible, not the UI toggle on provisioned rules:
-
-```bash
-make grafana-test-alert
-```
-
-Expect a **plain-text** ntfy message. Optional helper (lists contact points + direct ntfy only): `GRAFANA_PASS='…' python3 scripts/ntfy_smoke_test.py`
-
-In **Alerting → list**, **Grafana-managed** groups under **Bulletins** are in scope for this step. **Data source-managed** rules from Prometheus `alerts.yml` may show **No Data** — that is separate from Grafana alerting.
-
-![ntfy notification example](assets/grafana/alert-ntfy.png)
 
 ---
 

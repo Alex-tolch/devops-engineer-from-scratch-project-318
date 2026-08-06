@@ -1,0 +1,12 @@
+# Copy to inventory.ini and set IPs from: terraform -chdir=terraform output -raw droplet_ip / monitoring_ip
+
+[app]
+<app_ip> ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa ansible_host=<app_ip>
+
+[monitoring]
+<monitoring_ip> ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa ansible_host=<monitoring_ip>
+
+[app:vars]
+ansible_python_interpreter=/usr/bin/python3
+app_deploy_dir=/opt/bulletins
+docker_image=ghcr.io/<github_user>/devops-engineer-from-scratch-project-318:latest

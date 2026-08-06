@@ -1,0 +1,9 @@
+---
+profile: production
+exclude_paths:
+  - .cache/
+  - molecule/
+warn_list:
+  - schema
+  - name
+  - role-name
