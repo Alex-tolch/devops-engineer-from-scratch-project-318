@@ -94,5 +94,11 @@ jobs:
           python-version: "3.12"
       - name: Install ansible-lint
         run: pip install ansible-core ansible-lint
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+      - name: Prepare inventory for lint
+        run: |
+          cp ansible/inventory.ini.example ansible/inventory.ini
+          sed -i 's/<app_ip>/127.0.0.1/g; s/<monitoring_ip>/127.0.0.2/g; s|<github_user>|ci|g' ansible/inventory.ini
       - name: Lint Ansible playbooks
         run: make ansible-lint
