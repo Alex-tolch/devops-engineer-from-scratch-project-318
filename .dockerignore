@@ -4,10 +4,6 @@ _upstream
 ansible
 terraform
 *.md
-.gradle
-build
-frontend/node_modules
-frontend/dist
 .idea
 .vscode
 **/*.iml

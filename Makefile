@@ -1,37 +1,12 @@
-test:
-	./gradlew test
-
-start: run
-
-run:
-	./gradlew bootRun
-
-update-gradle:
-	./gradlew wrapper --gradle-version 9.2.1
-
-update-deps:
-	./gradlew refreshVersions
-
-install:
-	./gradlew dependencies
-
-build:
-	./gradlew build
-
-lint:
-	./gradlew spotlessCheck
-
-lint-fix:
-	./gradlew spotlessApply
-
 DOCKER_IMAGE ?= ghcr.io/alex-tolch/devops-engineer-from-scratch-project-318:latest
+APP_REPO ?= https://github.com/hexlet-components/project-devops-deploy.git
+APP_REF ?= main
 ANSIBLE_DIR := ansible
 VAULT_PASS_FILE := /tmp/hexlet-ansible-vault-pass
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml
 ANSIBLE_PROMETHEUS = cd $(ANSIBLE_DIR) && ANSIBLE_VAULT_PASSWORD_FILE=$(VAULT_PASS_FILE) ansible-playbook -i inventory.ini playbook.yml --limit monitoring
 TERRAFORM_DIR := terraform
 
-# Lint playbooks (requires: pip install ansible-core ansible-lint)
 ansible-lint:
 	cd $(ANSIBLE_DIR) && ansible-lint .
 
@@ -41,33 +16,29 @@ ansible-test:
 smoke:
 	bash scripts/smoke.sh
 
-# Infra checks after deploy (lint playbooks, SSH ping, HTTP smoke). App unit tests: make test.
 verify: ansible-lint ansible-test smoke
 
-.PHONY: test run build lint docker-build docker-run docker-upload-server compose-up compose-down \
+.PHONY: docker-build docker-run docker-upload-server \
 	terraform-init terraform-plan terraform-apply terraform-destroy \
 	ansible-setup ansible-prepare ansible-deploy ansible-monitoring ansible-prometheus ansible-grafana \
-	ansible-lint ansible-test smoke verify \
-	server-prepare server-deploy server-monitoring server-grafana deploy grafana-test-alert
+	ansible-lint ansible-test smoke verify docker-upload-server \
+	server-prepare server-deploy server-monitoring server-grafana deploy grafana-test-alert \
+	ansible-vault-encrypt ansible-vault-edit
 
 docker-build:
-	docker build -t $(DOCKER_IMAGE) .
+	docker build \
+		--build-arg APP_REPO=$(APP_REPO) \
+		--build-arg APP_REF=$(APP_REF) \
+		-t $(DOCKER_IMAGE) .
 
 docker-run:
 	docker run --rm -p 8080:8080 -p 9090:9090 \
 		-e SPRING_PROFILES_ACTIVE=dev \
 		$(DOCKER_IMAGE)
 
-# GHCR pull on the droplet often fails (private image). Build locally, load over SSH, then recreate.
+# Build locally, load over SSH when GHCR pull on the droplet is denied.
 docker-upload-server:
 	bash scripts/docker-upload-server.sh
-
-compose-up:
-	cp -n .env.example .env 2>/dev/null || true
-	DOCKER_IMAGE=$(DOCKER_IMAGE) docker compose up --build -d
-
-compose-down:
-	docker compose down -v
 
 terraform-init:
 	cd $(TERRAFORM_DIR) && terraform init
@@ -123,10 +94,8 @@ server-monitoring: ansible-setup
 
 server-grafana: ansible-setup ansible-grafana
 
-# Full stack on both droplets (after terraform + inventory + vault).
 deploy: server-prepare server-deploy server-monitoring
 
-# Provisioned test rule: no Resume toggle in UI — briefly enable via Ansible, then pause again.
 grafana-test-alert:
 	@cp $(ANSIBLE_DIR)/.vault-password $(VAULT_PASS_FILE)
 	@chmod 644 $(VAULT_PASS_FILE)

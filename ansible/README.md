@@ -1,5 +1,7 @@
 # Ansible
 
+Image is built from [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) via repo-root `Dockerfile` (not copied into this tree). Set `docker_image` in inventory / `group_vars/app/vars.yml`.
+
 ```bash
 cp inventory.ini.example inventory.ini
 # Set app + monitoring IPs from: terraform -chdir=terraform output -raw droplet_ip / monitoring_ip

@@ -9,12 +9,13 @@ HOST="${DEPLOY_HOST:-64.226.67.71}"
 SSH_USER="${DEPLOY_SSH_USER:-root}"
 NO_CACHE="${NO_CACHE:-}"
 
-BUILD_ARGS=()
+BUILD_ARGS=(--build-arg "APP_REPO=${APP_REPO:-https://github.com/hexlet-components/project-devops-deploy.git}")
+BUILD_ARGS+=(--build-arg "APP_REF=${APP_REF:-main}")
 if [[ -n "$NO_CACHE" ]]; then
   BUILD_ARGS+=(--no-cache)
 fi
 
-echo "Building ${IMAGE}..."
+echo "Building ${IMAGE} (APP_REPO=${APP_REPO:-https://github.com/hexlet-components/project-devops-deploy.git})..."
 docker build "${BUILD_ARGS[@]}" -t "$IMAGE" .
 
 echo "Uploading image to ${SSH_USER}@${HOST}..."

@@ -4,7 +4,7 @@
 
 ## Deploy (Hexlet)
 
-Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) with Docker, CI, Terraform (DigitalOcean), Ansible.
+Fork of [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) extended with **Terraform**, **Ansible**, monitoring, and **Docker** build. **Код приложения (`src/`, `frontend/`) не в этом репо** — при `make docker-build` / CI клонируется upstream (или свой fork через `APP_REPO`).
 
 ### Infrastructure reference (IPs, ports, URLs, notifications)
 
@@ -36,14 +36,14 @@ Promtail on the app host pushes to `http://165.232.72.139:3100/loki/api/v1/push`
 
 ### Deploy from scratch (both VMs)
 
-1. **Fork** this repository and clone your fork. Install **Terraform**, **Ansible**, **Docker**, **Make**, **JDK 21+**, **Python 3** (smoke scripts).
+1. **Fork** this repository. Install **Terraform**, **Ansible**, **Docker**, **Make**, **Python 3**. App dev/tests — в [upstream](https://github.com/hexlet-components/project-devops-deploy).
 2. **DigitalOcean:** create [API token](https://cloud.digitalocean.com/account/api/tokens) → `export DO_TOKEN=…`. Optional: Spaces keys if you use object storage in Terraform.
 3. **SSH:** `ssh-keygen -t ed25519` (or RSA); register the public key in DO; private key path must match `ansible_ssh_private_key_file` in inventory (default `~/.ssh/id_rsa`).
 4. **Terraform:** `cp terraform/terraform.tfvars.example terraform/terraform.tfvars` (if present) or set variables via env/`tfvars`; `make terraform-init && make terraform-apply`. Note `droplet_ip`, `monitoring_ip`, `database_password` from outputs.
 5. **Managed Postgres (prod):** put `db_host` / `db_password` into vault; once per cluster run [`scripts/fix-do-postgres-schema.sql`](scripts/fix-do-postgres-schema.sql) as `doadmin` if the app fails with `permission denied for schema public`.
-6. **Ansible inventory:** `cp ansible/inventory.ini.example ansible/inventory.ini` — set app **`64.226.67.71`** and monitoring **`165.232.72.139`** (or current `terraform output`), `docker_image` to your GHCR image.
+6. **Ansible inventory:** `cp ansible/inventory.ini.example ansible/inventory.ini` — IPs and `docker_image` (default `ghcr.io/<user>/devops-engineer-from-scratch-project-318:latest` from CI).
 7. **Vault:** `cp ansible/group_vars/app/vault.yml.example ansible/group_vars/app/vault.yml`, fill secrets, `make ansible-vault-encrypt` (requires `ansible/.vault-password`).
-8. **Deploy:** `make server-prepare` then `make server-deploy` on the app host; `make server-monitoring` on monitoring. Shortcut: `make deploy` (all three). If GHCR is private: `make docker-upload-server` before deploy.
+8. **Image:** `make docker-build` (клонирует [project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy)); CI push в GHCR на `main`. Свой fork приложения: `APP_REPO=https://github.com/<you>/project-devops-deploy.git make docker-build`. **Deploy:** `make deploy`. Private GHCR: `make docker-upload-server`.
 9. **Verify:** `make ansible-lint` (no SSH), `make ansible-test` (ping), `export METRICS_PASS='…'` and `make smoke` (API, Prometheus, Grafana, optional Loki e2e). Manual: Grafana dashboards, `make grafana-test-alert`, confirm ntfy.
 
 | Item          | Location                                                                                                                    |
@@ -53,25 +53,23 @@ Promtail on the app host pushes to `http://165.232.72.139:3100/loki/api/v1/push`
 | App URL       | http://64.226.67.71:8080                                                                                                    |
 | Prometheus    | http://165.232.72.139:9090 ([`/graph`](http://165.232.72.139:9090/graph), [`/targets`](http://165.232.72.139:9090/targets)) |
 | Grafana       | http://165.232.72.139:3000 (login `admin`, password in vault: `vault_grafana_admin_password`)                               |
-| Lint / tests  | `make lint` (Java Spotless), `make test` (Gradle), `make ansible-lint`, `make ansible-test`, `make smoke`, `make verify`    |
+| Lint / tests  | `make ansible-lint`, `make ansible-test`, `make smoke`, `make verify`                                                         |
 | Alerting test | `make grafana-test-alert` (unpauses provisioned test rule ~2 min, then pauses again)                                        |
 
 ```bash
-make test && make ansible-lint
 make docker-build
-make compose-up
-DO_TOKEN=... bash scripts/do-provision.sh   # optional
+make ansible-lint
 cp ansible/inventory.ini.example ansible/inventory.ini
 make server-prepare && make server-deploy
 make server-monitoring
 make ansible-test && METRICS_PASS='…' make smoke
 ```
 
-**Updating the app on the droplet:** `make server-deploy` alone does not replace the image if GHCR pull is denied (private package). Build locally and load over SSH, then recreate the container:
+**Updating the app on the droplet:** after code changes — `make docker-build`, push to GHCR (CI on `main` or manual), then `make server-deploy`. If GHCR pull is denied:
 
 ```bash
 make docker-upload-server
-# or: NO_CACHE=1 make docker-upload-server   # full rebuild
+# or: NO_CACHE=1 make docker-upload-server
 ```
 
 ```bash
@@ -382,206 +380,11 @@ ssh root@$APP_HOST 'docker logs bulletins-app-1 2>&1 | tail -1 | jq .'
 
 ---
 
-# Project DevOps Deploy
+## Application image (source not in this repo)
 
-Bulletin board service.
-
-> **Fork policy**: this upstream repository is read-only. We do not review or merge pull requests and we do not accept infrastructure changes (Dockerfiles, Ansible roles, CI/CD workflows, etc.). To experiment or extend the project, fork it and work inside your own repository.
-
-The default `dev` profile uses an in-memory H2 database and seeds 10 sample bulletins through `DataInitializer`, so the API works immediately after startup.
-
-API documentation is available via Swagger UI at `http://localhost:8080/swagger-ui/index.html`.
-
-## Project layout
-
-- Backend (Spring Boot) lives in the repository root.
-- Frontend (React Admin + Vite) is located in `frontend/`.
-- Shared static assets for the backend are served from `src/main/resources/static` (populated by the frontend build when needed).
-
-Keep this structure in mind when running commands—backend tooling (`gradlew`, `make run`, tests) run from the root, frontend tooling (`npm`, `vite`) runs from `frontend/`.
-
-## Environment variables
-
-Key variables are read directly by Spring Boot (see `src/main/resources/application.yml` and `application-prod.yml` for defaults):
-
-| Variable                     | Description                                                   | Default                                      |
-| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------- |
-| `SPRING_PROFILES_ACTIVE`     | Active Spring profile (`dev`, `prod`, etc.)                   | `dev`                                        |
-| `SPRING_DATASOURCE_URL`      | JDBC URL for PostgreSQL in `prod`                             | `jdbc:postgresql://localhost:5432/bulletins` |
-| `SPRING_DATASOURCE_USERNAME` | DB username                                                   | `postgres`                                   |
-| `SPRING_DATASOURCE_PASSWORD` | DB password                                                   | `postgres`                                   |
-| `STORAGE_S3_BUCKET`          | Bucket name for bulletin images                               | empty                                        |
-| `STORAGE_S3_REGION`          | Region for the S3-compatible storage                          | empty                                        |
-| `STORAGE_S3_ENDPOINT`        | Optional custom endpoint                                      | empty                                        |
-| `STORAGE_S3_ACCESSKEY`       | Access key ID                                                 | empty                                        |
-| `STORAGE_S3_SECRETKEY`       | Secret key                                                    | empty                                        |
-| `STORAGE_S3_CDNURL`          | Optional public CDN prefix                                    | empty                                        |
-| `MANAGEMENT_SERVER_PORT`     | Port for Spring Actuator endpoints (health, metrics, etc.)    | `9090`                                       |
-| `JAVA_OPTS`                  | Extra JVM parameters (heap, `-Dspring.profiles.active`, etc.) | empty                                        |
-
-All other variables supported by Spring Boot can be overridden the same way; check the application configuration files if you need to confirm a property name.
-
-## Requirements
-
-- JDK 21+.
-- Gradle 9.2.1.
-- PostgreSQL only if you run the `prod` profile with an external database.
-- Make.
-- NodeJS 20+
-
-## Running
-
-### Backend (local dev profile)
-
-1. Install prerequisites from the **Requirements** section.
-2. From the repository root start the backend:
-
-    ```bash
-    make run
-    ```
-
-3. Explore the API:
-    - `GET http://localhost:8080/api/bulletins`
-    - `GET http://localhost:8080/api/bulletins?page=1&perPage=9&sort=createdAt&order=DESC&state=PUBLISHED&search=laptop`
-    - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
-
-`/api/bulletins` accepts pagination (`page`, `perPage`), sorting (`sort`, `order`) and filters (`state`, `search`). Filters are processed via JPA Specifications so the same contract is available to the React Admin frontend.
-
-### Frontend (development build)
-
-1. Open a second terminal and move into the frontend directory:
-
-    ```bash
-    cd frontend
-    make install   # npm install
-    make start     # Vite dev server on http://localhost:5173
-    ```
-
-2. The dev server proxies `/api` requests to `http://localhost:8080`, so keep the backend running.
-
-### Production profile on a single host
-
-1. Export the environment variables from the table above (DB access, S3 storage, `JAVA_OPTS`, etc.). The defaults in `application-prod.yml` show the exact property names if you need to double-check.
-2. Build and launch the backend:
-
-    ```bash
-    make build
-    java -jar build/libs/project-devops-deploy-0.0.1-SNAPSHOT.jar
-    ```
-
-3. Serve the frontend either from the same JVM (see **Build and serve from the Java app**) or deploy it separately (any static hosting/CDN works once `frontend/dist` is uploaded).
-
-`JAVA_OPTS` can be used to control heap size, GC, or add any `-D` system properties without editing the manifest.
-
-### Useful commands
-
-See [Makefile](./Makefile)
-
-## Frontend
-
-### Development
-
-1. Install Node.js 24 LTS (or newer) and npm.
-2. Install dependencies and start the Vite dev server:
-
-    ```bash
-    cd frontend
-    make install
-    make start
-    ```
-
-3. The dev server proxies `/api` requests to `http://localhost:8080`, so keep the backend running via `make run` (or `./gradlew bootRun`) in another terminal.
-
-### Image upload flow
-
-1. Upload files via `POST /api/files/upload` (multipart form field named `file`).
-2. The response contains `key` and a temporary `url`. Persist the `key` in the `imageKey` field when creating or updating bulletins; the backend stores only that identifier.
-3. When you need a fresh link, call `GET /api/files/view?key=...` to receive a new URL (the backend issues presigned links on demand).
-
-### Build and serve from the Java app
-
-1. Build the production bundle:
-
-    ```bash
-    cd frontend
-    make install      # run once
-    make build    # outputs to frontend/dist
-    ```
-
-2. Copy the compiled assets into Spring Boot’s static resources (served from `src/main/resources/static`):
-
-    ```bash
-    rm -rf src/main/resources/static
-    mkdir -p src/main/resources/static
-    cp -R frontend/dist/* src/main/resources/static/
-    ```
-
-3. Restart the backend (`make run`) and open `http://localhost:8080/` — the React app will now be served directly by the Java application.
-
-### Running in Docker
-
-Pass JVM flags via `JAVA_OPTS`:
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e JAVA_OPTS="-Xms256m -Xmx512m -Dspring.profiles.active=prod" \
-  ...
-```
-
-Useful JVM options:
-
-- `-Xms/-Xmx` — set memory limits inside the container.
-- `-XX:+UseContainerSupport` / `-XX:ActiveProcessorCount` (these respect cgroup limits by default).
-- `-Dspring.profiles.active=prod` — switch the profile without recompiling.
-- `-Dlogging.level.root=INFO` or Spring environment variables (`SPRING_DATASOURCE_URL`, `STORAGE_S3_BUCKET`, etc.) — configure external services.
-
-## Monitoring / management ports
-
-Production (Ansible): Actuator is on **`127.0.0.1:9091`** on the host (Docker maps container `9090`); **Nginx** exposes **`0.0.0.0:9090`** with basic auth and JSON logs. **Node Exporter** listens on `9100`. Restrict both ports in Terraform (`metrics_source_addresses`).
-
-Local development: management port is published on `9090` (`docker compose` / `make run`) without Nginx.
-
-- Application HTTP: `8080`.
-- Health: `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness`.
-- Prometheus scrape: `/actuator/prometheus` (Micrometer).
-- See [Observability (step 2)](#observability-step-2-node-exporter-and-application-metrics) for curl examples and the metrics table.
-
-## Actuator endpoints (local check)
-
-With the app running locally (`make run`), the management port defaults to `http://localhost:9090`. Useful URLs:
-
-- `http://localhost:9090/actuator` — index of exposed endpoints.
-- `http://localhost:9090/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` — readiness/liveness probes.
-- `http://localhost:9090/actuator/metrics` and `http://localhost:9090/actuator/metrics/http.server.requests` — raw Micrometer metrics.
-- `http://localhost:9090/actuator/prometheus` — Prometheus scrape output (open in browser or `curl` to confirm it renders).
-- `http://localhost:9090/actuator/logfile` — current application log (same JSON that goes to stdout).
-
-Override the host/port with `MANAGEMENT_SERVER_PORT` if you changed it; no Prometheus or Grafana instance is needed just to inspect these endpoints.
-
-## Logging
-
-- The backend ships with `src/main/resources/logback-spring.xml`, which writes structured JSON events to `stdout`. Every record contains `timestamp`, `app`, `environment`, `instance`, `logger`, `thread`, message arguments, MDC, and stack traces so Promtail/Loki (or any log shipper) can parse them without extra processing.
-- No extra variables are required, but you can supply a different configuration via Spring Boot’s standard options (`LOGGING_CONFIG`, `logging.config`, or by overriding `logback-spring.xml` on the classpath).
-- Container runtimes should forward `stdout`/`stderr` to your logging pipeline. Avoid redirecting logs to files unless your platform explicitly demands it.
-
-## Image Upload Checks
-
-### Local (dev profile, H2 + temp storage)
-
-1. Start backend: `make run` (uses in-memory H2 and local filesystem storage under `/tmp/bulletin-images`).
-2. Start frontend dev server: `cd frontend && npm install && npm run dev`.
-3. In React Admin:
-    - Create a bulletin or edit an existing one.
-    - Use the “Upload image” field; after save, the image preview should load via the generated `imageUrl`.
-4. Verify backend log: look for `Stored image` entries or check `/tmp/bulletin-images` for a new file. Refresh the bulletin show page to ensure the presigned/local URL still renders.
-
-### Production / S3
-
-1. Ensure the S3-related variables from the table above (bucket, region, access/secret keys, optional endpoint/CDN URL) are exported alongside the `prod` profile settings.
-2. Deploy backend (e.g., `java -jar build/libs/project-devops-deploy-0.0.1-SNAPSHOT.jar`).
-3. In the frontend (local or deployed), upload an image for a bulletin.
-4. Confirm expected behavior:
-    - Response from `/api/files/upload` contains a non-empty `key`.
-    - Image shows up in bulletin show view (URL should either point to CDN or be a presigned S3 link).
-    - Object exists in S3 bucket (check via AWS console or `aws s3 ls s3://your-bucket/bulletins/...`).
-5. Optional: run `curl -I "$(curl -s .../api/files/view?key=... | jq -r .url)"` to ensure the presigned URL is valid from the production environment.
+| Item | Location |
+|------|----------|
+| App source | [hexlet-components/project-devops-deploy](https://github.com/hexlet-components/project-devops-deploy) only |
+| Build | [`Dockerfile`](Dockerfile) clones `APP_REPO` at build; `make docker-build`; CI job **docker** → GHCR |
+| Overrides | `APP_REPO`, `APP_REF` (Makefile / env) |
+| On server | `ansible/roles/app` pulls `docker_image` from `group_vars/app/vars.yml` |
